@@ -31,7 +31,6 @@ export default function NavBar() {
   return (
     <nav className="bg-black text-white px-4 py-3 flex items-center justify-between">
       <div className="flex items-center gap-4">
-        {/* "Home" text becomes the user's username when available */}
         <Link href="/" className="font-semibold hover:underline">
           {username || "Home"}
         </Link>
@@ -43,6 +42,9 @@ export default function NavBar() {
         </Link>
         <Link href="/sidequests" className="hover:underline">
           Side Quests
+        </Link>
+        <Link href="/attributes" className="hover:underline">
+          Attributes
         </Link>
       </div>
 

@@ -18,6 +18,7 @@ import {
 import { getBrowserTimezone, getNextOccurrence, isoDate } from "@/lib/recurrence";
 import { computeReward } from "@/lib/rewards";
 import { awardXp } from "@/lib/xp";
+import { awardAttributeXp } from "@/lib/attributes";
 import Link from "next/link";
 
 type Recurrence = {
@@ -40,9 +41,12 @@ type CommonTask = {
   streak: number;
   nextDueAt: Timestamp;
   end_date?: Timestamp | null;
+  attributeIds?: string[];
   createdAt: Timestamp;
   updatedAt: Timestamp;
 };
+
+type AttrOption = { id: string; name: string };
 
 export default function TasksPage() {
   const [user, setUser] = useState<User | null>(null);
@@ -56,11 +60,16 @@ export default function TasksPage() {
   const [bonus, setBonus] = useState<boolean>(false);
   const [endDate, setEndDate] = useState<string>("");
 
+  // attributes available for selection
+  const [attrs, setAttrs] = useState<AttrOption[]>([]);
+  const [selectedAttrIds, setSelectedAttrIds] = useState<string[]>([]);
+
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u));
     return () => unsub();
   }, []);
 
+  // tasks subscribe
   useEffect(() => {
     if (!user) {
       setTasks([]);
@@ -73,6 +82,19 @@ export default function TasksPage() {
       const rows: CommonTask[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
       setTasks(rows);
       setLoading(false);
+    });
+    return () => unsub();
+  }, [user]);
+
+  // attributes subscribe
+  useEffect(() => {
+    if (!user) {
+      setAttrs([]);
+      return;
+    }
+    const col = collection(db, "users", user.uid, "attributes");
+    const unsub = onSnapshot(col, (snap) => {
+      setAttrs(snap.docs.map((d) => ({ id: d.id, name: (d.data() as any).name })));
     });
     return () => unsub();
   }, [user]);
@@ -103,6 +125,7 @@ export default function TasksPage() {
       streak: 0,
       nextDueAt: Timestamp.fromDate(next),
       end_date: endDate ? Timestamp.fromDate(new Date(endDate)) : null,
+      attributeIds: selectedAttrIds,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -111,6 +134,7 @@ export default function TasksPage() {
     setDescription("");
     setBonus(false);
     setEndDate("");
+    setSelectedAttrIds([]);
   };
 
   const markTodayComplete = async (t: CommonTask) => {
@@ -135,8 +159,12 @@ export default function TasksPage() {
       updatedAt: serverTimestamp(),
     });
 
-    // Award XP for this completion
+    // Award XP to user…
     await awardXp(user.uid, t.final_reward);
+    // …and to each attached attribute
+    if (t.attributeIds?.length) {
+      await awardAttributeXp(user.uid, t.attributeIds, t.final_reward);
+    }
   };
 
   const removeTask = async (t: CommonTask) => {
@@ -144,14 +172,16 @@ export default function TasksPage() {
     await deleteDoc(doc(db, "users", user.uid, "commonTasks", t.id));
   };
 
+  const toggleSelectAttr = (id: string) => {
+    setSelectedAttrIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
   if (!user) {
     return (
       <main className="p-8 max-w-2xl mx-auto">
         <h1 className="text-2xl font-bold">Tasks</h1>
         <p className="mt-4 text-sm">You need to sign in to manage tasks.</p>
-        <Link href="/signin" className="mt-4 inline-block underline">
-          Go to sign in
-        </Link>
+        <Link href="/signin" className="mt-4 inline-block underline">Go to sign in</Link>
       </main>
     );
   }
@@ -165,43 +195,22 @@ export default function TasksPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <label className="text-sm">
             Name *
-            <input
-              className="mt-1 border rounded px-3 py-2 w-full"
-              placeholder="Name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
+            <input className="mt-1 border rounded px-3 py-2 w-full" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
           </label>
 
           <label className="text-sm">
             Difficulty (1–100)
-            <input
-              className="mt-1 border rounded px-3 py-2 w-full"
-              type="number"
-              min={1}
-              max={100}
-              value={difficulty}
-              onChange={(e) => setDifficulty(parseInt(e.target.value || "1"))}
-            />
+            <input className="mt-1 border rounded px-3 py-2 w-full" type="number" min={1} max={100} value={difficulty} onChange={(e) => setDifficulty(parseInt(e.target.value || "1"))} />
           </label>
 
           <label className="text-sm md:col-span-2">
             Description (optional)
-            <input
-              className="mt-1 border rounded px-3 py-2 w-full"
-              placeholder="Description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
+            <input className="mt-1 border rounded px-3 py-2 w-full" placeholder="Description" value={description} onChange={(e) => setDescription(e.target.value)} />
           </label>
 
           <label className="text-sm">
             Frequency
-            <select
-              className="mt-1 border rounded px-3 py-2 w-full"
-              value={rrule}
-              onChange={(e) => setRrule(e.target.value)}
-            >
+            <select className="mt-1 border rounded px-3 py-2 w-full" value={rrule} onChange={(e) => setRrule(e.target.value)}>
               <option value="FREQ=DAILY">Every day</option>
               <option value="FREQ=WEEKLY;BYDAY=MO,WE,FR">Mon/Wed/Fri</option>
               <option value="FREQ=WEEKLY;BYDAY=SA,SU">Weekends</option>
@@ -212,13 +221,28 @@ export default function TasksPage() {
 
           <label className="text-sm">
             End date (optional)
-            <input
-              className="mt-1 border rounded px-3 py-2 w-full"
-              type="datetime-local"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-            />
+            <input className="mt-1 border rounded px-3 py-2 w-full" type="datetime-local" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
           </label>
+
+          <fieldset className="text-sm md:col-span-2">
+            <legend className="mb-1">Attach attributes (optional)</legend>
+            {attrs.length === 0 ? (
+              <div className="text-xs opacity-70">No attributes yet. Create some on the Attributes page.</div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {attrs.map((a) => (
+                  <label key={a.id} className="flex items-center gap-2 border rounded px-2 py-1">
+                    <input
+                      type="checkbox"
+                      checked={selectedAttrIds.includes(a.id)}
+                      onChange={() => toggleSelectAttr(a.id)}
+                    />
+                    {a.name}
+                  </label>
+                ))}
+              </div>
+            )}
+          </fieldset>
 
           <label className="flex items-center gap-2 text-sm md:col-span-2">
             <input type="checkbox" checked={bonus} onChange={(e) => setBonus(e.target.checked)} />
@@ -242,11 +266,7 @@ export default function TasksPage() {
             const nextStr = next ? `${next.toLocaleString()}` : "—";
             const completedToday = t.dates_completed.some((ts) => isoDate(ts.toDate()) === isoDate());
             const bonusLabel =
-              t.bonus_amount === 0
-                ? ""
-                : t.bonus_amount > 0
-                ? ` +${t.bonus_amount}xp bonus`
-                : ` ${t.bonus_amount}xp bonus`;
+              t.bonus_amount === 0 ? "" : t.bonus_amount > 0 ? ` +${t.bonus_amount}xp bonus` : ` ${t.bonus_amount}xp bonus`;
 
             return (
               <div key={t.id} className="border rounded-xl p-4 flex items-start justify-between gap-4">
@@ -256,6 +276,7 @@ export default function TasksPage() {
                   <div className="mt-1 text-xs opacity-70">
                     Difficulty: {t.difficulty} | Reward: {t.final_reward}xp
                     <span className="opacity-70">{bonusLabel}</span> | Next due: {nextStr} | Streak: {t.streak ?? 0}
+                    {t.attributeIds?.length ? <span> | Attributes: {t.attributeIds.length}</span> : null}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">

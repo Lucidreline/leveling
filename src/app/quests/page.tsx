@@ -5,7 +5,6 @@ import { auth, db } from "@/lib/firebase";
 import { User, onAuthStateChanged } from "firebase/auth";
 import {
   addDoc,
-  arrayUnion,
   collection,
   deleteDoc,
   doc,
@@ -18,6 +17,7 @@ import {
 } from "firebase/firestore";
 import { computeReward } from "@/lib/rewards";
 import { awardXp } from "@/lib/xp";
+import { awardAttributeXp } from "@/lib/attributes";
 import Link from "next/link";
 import {
   Milestone,
@@ -30,20 +30,21 @@ type Quest = {
   id: string;
   description: string;
   difficulty: number;
-
   initial_reward: number;
   bonus_amount: number;
   final_reward: number;
   bonus_multiplier: number;
-
   etc?: Timestamp | null;
   is_complete: boolean;
   milestones: Milestone[];
+  attributeIds?: string[];
   openedAt: Timestamp;
   closedAt?: Timestamp | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 };
+
+type AttrOption = { id: string; name: string };
 
 export default function QuestsPage() {
   const [user, setUser] = useState<User | null>(null);
@@ -56,10 +57,14 @@ export default function QuestsPage() {
   const [etc, setEtc] = useState<string>("");
   const [bonus, setBonus] = useState<boolean>(false);
 
-  // milestone mini-form (for creation only)
+  // milestones
   const [msName, setMsName] = useState("");
   const [msPct, setMsPct] = useState<number>(25);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
+
+  // attributes
+  const [attrs, setAttrs] = useState<AttrOption[]>([]);
+  const [selectedAttrIds, setSelectedAttrIds] = useState<string[]>([]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u));
@@ -78,6 +83,19 @@ export default function QuestsPage() {
       const data: Quest[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
       setRows(data);
       setLoading(false);
+    });
+    return () => unsub();
+  }, [user]);
+
+  // attributes
+  useEffect(() => {
+    if (!user) {
+      setAttrs([]);
+      return;
+    }
+    const col = collection(db, "users", user.uid, "attributes");
+    const unsub = onSnapshot(col, (snap) => {
+      setAttrs(snap.docs.map((d) => ({ id: d.id, name: (d.data() as any).name })));
     });
     return () => unsub();
   }, [user]);
@@ -112,28 +130,27 @@ export default function QuestsPage() {
 
     const diff = Math.min(Math.max(Number(difficulty) || 1, 1), 100);
 
-    // Validate milestones <= 100%
     const val = validateMilestones(milestones);
     if (!val.ok) {
       alert(val.error);
       return;
     }
 
-    const { initial_reward, bonus_amount, final_reward, bonus_multiplier } = computeReward("quest", diff, bonus);
+    const { initial_reward, bonus_amount, final_reward, bonus_multiplier } =
+      computeReward("quest", diff, bonus);
 
     const colRef = collection(db, "users", user.uid, "quests");
     await addDoc(colRef, {
       description: description.trim(),
       difficulty: diff,
-
       initial_reward,
       bonus_amount,
       final_reward,
       bonus_multiplier,
-
       etc: etc ? Timestamp.fromDate(new Date(etc)) : null,
       is_complete: false,
       milestones,
+      attributeIds: selectedAttrIds,
       openedAt: serverTimestamp(),
       closedAt: null,
       createdAt: serverTimestamp(),
@@ -144,19 +161,22 @@ export default function QuestsPage() {
     setEtc("");
     setBonus(false);
     setMilestones([]);
+    setSelectedAttrIds([]);
   };
 
-  // Mark a single milestone complete (one way action)
   const completeMilestone = async (q: Quest, index: number) => {
     if (!user) return;
     const m = q.milestones[index];
     if (!m || m.is_complete) return;
 
-    // Award milestone payout
     const amt = payoutForMilestone(q.final_reward, m.reward_percentage);
-    await awardXp(user.uid, amt);
 
-    // Update milestone state
+    // Award to user + attributes
+    await awardXp(user.uid, amt);
+    if (q.attributeIds?.length) {
+      await awardAttributeXp(user.uid, q.attributeIds, amt);
+    }
+
     const updated = q.milestones.map((mi, i) =>
       i === index ? { ...mi, is_complete: true, completedAt: Timestamp.now() } : mi
     );
@@ -168,7 +188,6 @@ export default function QuestsPage() {
     });
   };
 
-  // Toggle quest complete; awarding remainder if any.
   const toggleComplete = async (qst: Quest) => {
     if (!user) return;
     const toComplete = !qst.is_complete;
@@ -185,15 +204,22 @@ export default function QuestsPage() {
       updatedAt: now,
     });
 
-    // If marking complete, award remainder; if reopening, remove remainder.
-    if (completionAward !== 0) {
-      await awardXp(user.uid, toComplete ? completionAward : -completionAward);
+    const delta = toComplete ? completionAward : -completionAward;
+    if (delta !== 0) {
+      await awardXp(user.uid, delta);
+      if (qst.attributeIds?.length) {
+        await awardAttributeXp(user.uid, qst.attributeIds, delta);
+      }
     }
   };
 
   const remove = async (qst: Quest) => {
     if (!user) return;
     await deleteDoc(doc(db, "users", user.uid, "quests", qst.id));
+  };
+
+  const toggleSelectAttr = (id: string) => {
+    setSelectedAttrIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
   if (!user) {
@@ -210,68 +236,32 @@ export default function QuestsPage() {
     <main className="p-8 max-w-3xl mx-auto space-y-6">
       <h1 className="text-2xl font-bold">Quests</h1>
 
-      {/* Add quest */}
       <section className="border p-4 rounded-xl space-y-3">
         <h2 className="font-semibold">Add a quest</h2>
 
         <label className="text-sm block">
           Description *
-          <input
-            className="mt-1 border rounded px-3 py-2 w-full"
-            placeholder="Description"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
+          <input className="mt-1 border rounded px-3 py-2 w-full" placeholder="Description" value={description} onChange={(e) => setDescription(e.target.value)} />
         </label>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <label className="text-sm">
             Difficulty (1–100)
-            <input
-              className="mt-1 border rounded px-3 py-2 w-full"
-              type="number"
-              min={1}
-              max={100}
-              value={difficulty}
-              onChange={(e) => setDifficulty(parseInt(e.target.value || "1"))}
-            />
+            <input className="mt-1 border rounded px-3 py-2 w-full" type="number" min={1} max={100} value={difficulty} onChange={(e) => setDifficulty(parseInt(e.target.value || "1"))} />
           </label>
 
           <label className="text-sm">
             ETC (date/time)
-            <input
-              className="mt-1 border rounded px-3 py-2 w-full"
-              type="datetime-local"
-              value={etc}
-              onChange={(e) => setEtc(e.target.value)}
-            />
+            <input className="mt-1 border rounded px-3 py-2 w-full" type="datetime-local" value={etc} onChange={(e) => setEtc(e.target.value)} />
           </label>
         </div>
-
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={bonus} onChange={(e) => setBonus(e.target.checked)} />
-          Apply bonus randomness (±25%)
-        </label>
 
         {/* Milestones */}
         <div className="border rounded-lg p-3 space-y-2">
           <div className="font-medium text-sm">Milestones (total ≤ 100%)</div>
           <div className="flex flex-col md:flex-row gap-2">
-            <input
-              className="border rounded px-3 py-2 flex-1"
-              placeholder="Milestone name"
-              value={msName}
-              onChange={(e) => setMsName(e.target.value)}
-            />
-            <input
-              className="border rounded px-3 py-2 w-40"
-              type="number"
-              min={0}
-              max={100}
-              value={msPct}
-              onChange={(e) => setMsPct(parseInt(e.target.value || "0"))}
-              placeholder="% of reward"
-            />
+            <input className="border rounded px-3 py-2 flex-1" placeholder="Milestone name" value={msName} onChange={(e) => setMsName(e.target.value)} />
+            <input className="border rounded px-3 py-2 w-40" type="number" min={0} max={100} value={msPct} onChange={(e) => setMsPct(parseInt(e.target.value || "0"))} placeholder="% of reward" />
             <button className="border rounded px-3 py-2 hover:bg-gray-50" onClick={addMilestone}>
               Add milestone
             </button>
@@ -280,18 +270,40 @@ export default function QuestsPage() {
           {milestones.length > 0 && (
             <ul className="text-sm list-disc pl-5">
               {milestones.map((m, i) => (
-                <li key={i} className="flex items-center justify-between gap-2">
-                  <span>
-                    {m.milestone_name} — {m.reward_percentage}%
-                  </span>
-                  <button className="text-xs underline" onClick={() => removeMilestone(i)}>
-                    remove
-                  </button>
+                <li key={i} className="flex items-center justify-between">
+                  <span>{m.milestone_name} — {m.reward_percentage}%</span>
+                  <button className="text-xs underline" onClick={() => removeMilestone(i)}>remove</button>
                 </li>
               ))}
             </ul>
           )}
         </div>
+
+        {/* Attach attributes */}
+        <fieldset className="text-sm">
+          <legend className="mb-1">Attach attributes (optional)</legend>
+          {attrs.length === 0 ? (
+            <div className="text-xs opacity-70">No attributes yet. Create some on the Attributes page.</div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {attrs.map((a) => (
+                <label key={a.id} className="flex items-center gap-2 border rounded px-2 py-1">
+                  <input
+                    type="checkbox"
+                    checked={selectedAttrIds.includes(a.id)}
+                    onChange={() => toggleSelectAttr(a.id)}
+                  />
+                  {a.name}
+                </label>
+              ))}
+            </div>
+          )}
+        </fieldset>
+
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={bonus} onChange={(e) => setBonus(e.target.checked)} />
+          Apply bonus randomness (±25%)
+        </label>
 
         <button className="border rounded px-4 py-2 hover:bg-gray-50" onClick={addQuest}>
           Add quest
@@ -308,11 +320,7 @@ export default function QuestsPage() {
           rows.map((q) => {
             const etcStr = q.etc ? q.etc.toDate().toLocaleString() : "—";
             const bonusLabel =
-              q.bonus_amount === 0
-                ? ""
-                : q.bonus_amount > 0
-                ? ` +${q.bonus_amount}xp bonus`
-                : ` ${q.bonus_amount}xp bonus`;
+              q.bonus_amount === 0 ? "" : q.bonus_amount > 0 ? ` +${q.bonus_amount}xp bonus` : ` ${q.bonus_amount}xp bonus`;
 
             const totalPct = q.milestones.reduce((s, m) => s + (m.reward_percentage || 0), 0);
 
@@ -324,10 +332,10 @@ export default function QuestsPage() {
                     <div className="text-xs opacity-70 mt-1">
                       Difficulty: {q.difficulty} | Reward: {q.final_reward}xp
                       <span className="opacity-70">{bonusLabel}</span> | ETC: {etcStr}
+                      {q.attributeIds?.length ? <span> | Attributes: {q.attributeIds.length}</span> : null}
                     </div>
                     <div className="text-[11px] opacity-60 mt-1">
-                      Milestone total: {totalPct}% | Completion pays:{" "}
-                      {payoutForQuestCompletion(q.final_reward, totalPct)} xp
+                      Milestone total: {totalPct}% | Completion pays: {payoutForQuestCompletion(q.final_reward, totalPct)} xp
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -349,8 +357,7 @@ export default function QuestsPage() {
                           <div>
                             <div className="font-medium">{m.milestone_name}</div>
                             <div className="text-xs opacity-70">
-                              {m.reward_percentage}% → {payout} xp
-                              {m.is_complete && m.completedAt ? ` — completed` : ""}
+                              {m.reward_percentage}% → {payout} xp {m.is_complete ? `— completed` : ""}
                             </div>
                           </div>
                           <div>

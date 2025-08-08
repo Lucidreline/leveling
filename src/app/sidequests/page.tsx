@@ -17,6 +17,7 @@ import {
 } from "firebase/firestore";
 import { computeReward } from "@/lib/rewards";
 import { awardXp } from "@/lib/xp";
+import { awardAttributeXp } from "@/lib/attributes";
 import Link from "next/link";
 
 type SideQuest = {
@@ -24,24 +25,27 @@ type SideQuest = {
   name: string;
   description?: string;
   difficulty: number;
-
   initial_reward: number;
   bonus_amount: number;
   final_reward: number;
   bonus_multiplier: number;
-
   etc?: Timestamp | null;
   is_complete: boolean;
+  attributeIds?: string[];
   openedAt: Timestamp;
   closedAt?: Timestamp | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 };
 
+type AttrOption = { id: string; name: string };
+
 export default function SideQuestsPage() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<SideQuest[]>([]);
+  const [attrs, setAttrs] = useState<AttrOption[]>([]);
+  const [selectedAttrIds, setSelectedAttrIds] = useState<string[]>([]);
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -70,6 +74,19 @@ export default function SideQuestsPage() {
     return () => unsub();
   }, [user]);
 
+  // attributes
+  useEffect(() => {
+    if (!user) {
+      setAttrs([]);
+      return;
+    }
+    const col = collection(db, "users", user.uid, "attributes");
+    const unsub = onSnapshot(col, (snap) => {
+      setAttrs(snap.docs.map((d) => ({ id: d.id, name: (d.data() as any).name })));
+    });
+    return () => unsub();
+  }, [user]);
+
   const addSideQuest = async () => {
     if (!user) return;
     if (!name.trim()) return;
@@ -83,14 +100,13 @@ export default function SideQuestsPage() {
       name: name.trim(),
       description: description.trim() || null,
       difficulty: diff,
-
       initial_reward,
       bonus_amount,
       final_reward,
       bonus_multiplier,
-
       etc: etc ? Timestamp.fromDate(new Date(etc)) : null,
       is_complete: false,
+      attributeIds: selectedAttrIds,
       openedAt: serverTimestamp(),
       closedAt: null,
       createdAt: serverTimestamp(),
@@ -101,6 +117,7 @@ export default function SideQuestsPage() {
     setDescription("");
     setEtc("");
     setBonus(false);
+    setSelectedAttrIds([]);
   };
 
   const toggleComplete = async (sq: SideQuest) => {
@@ -115,13 +132,20 @@ export default function SideQuestsPage() {
       updatedAt: now,
     });
 
-    // Award or remove XP depending on toggle direction
-    await awardXp(user.uid, toComplete ? sq.final_reward : -sq.final_reward);
+    const delta = toComplete ? sq.final_reward : -sq.final_reward;
+    await awardXp(user.uid, delta);
+    if (sq.attributeIds?.length) {
+      await awardAttributeXp(user.uid, sq.attributeIds, delta);
+    }
   };
 
   const remove = async (sq: SideQuest) => {
     if (!user) return;
     await deleteDoc(doc(db, "users", user.uid, "sideQuests", sq.id));
+  };
+
+  const toggleSelectAttr = (id: string) => {
+    setSelectedAttrIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
   if (!user) {
@@ -143,37 +167,40 @@ export default function SideQuestsPage() {
 
         <label className="text-sm block">
           Name *
-          <input
-            className="mt-1 border rounded px-3 py-2 w-full"
-            placeholder="Name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
+          <input className="mt-1 border rounded px-3 py-2 w-full" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
         </label>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <label className="text-sm">
             Difficulty (1–100)
-            <input
-              className="mt-1 border rounded px-3 py-2 w-full"
-              type="number"
-              min={1}
-              max={100}
-              value={difficulty}
-              onChange={(e) => setDifficulty(parseInt(e.target.value || "1"))}
-            />
+            <input className="mt-1 border rounded px-3 py-2 w-full" type="number" min={1} max={100} value={difficulty} onChange={(e) => setDifficulty(parseInt(e.target.value || "1"))} />
           </label>
 
           <label className="text-sm">
             ETC (date/time)
-            <input
-              className="mt-1 border rounded px-3 py-2 w-full"
-              type="datetime-local"
-              value={etc}
-              onChange={(e) => setEtc(e.target.value)}
-            />
+            <input className="mt-1 border rounded px-3 py-2 w-full" type="datetime-local" value={etc} onChange={(e) => setEtc(e.target.value)} />
           </label>
         </div>
+
+        <fieldset className="text-sm">
+          <legend className="mb-1">Attach attributes (optional)</legend>
+          {attrs.length === 0 ? (
+            <div className="text-xs opacity-70">No attributes yet. Create some on the Attributes page.</div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {attrs.map((a) => (
+                <label key={a.id} className="flex items-center gap-2 border rounded px-2 py-1">
+                  <input
+                    type="checkbox"
+                    checked={selectedAttrIds.includes(a.id)}
+                    onChange={() => toggleSelectAttr(a.id)}
+                  />
+                  {a.name}
+                </label>
+              ))}
+            </div>
+          )}
+        </fieldset>
 
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={bonus} onChange={(e) => setBonus(e.target.checked)} />
@@ -194,11 +221,7 @@ export default function SideQuestsPage() {
           rows.map((sq) => {
             const etcStr = sq.etc ? sq.etc.toDate().toLocaleString() : "—";
             const bonusLabel =
-              sq.bonus_amount === 0
-                ? ""
-                : sq.bonus_amount > 0
-                ? ` +${sq.bonus_amount}xp bonus`
-                : ` ${sq.bonus_amount}xp bonus`;
+              sq.bonus_amount === 0 ? "" : sq.bonus_amount > 0 ? ` +${sq.bonus_amount}xp bonus` : ` ${sq.bonus_amount}xp bonus`;
             return (
               <div key={sq.id} className="border rounded-xl p-4 flex items-start justify-between gap-4">
                 <div>
@@ -207,6 +230,7 @@ export default function SideQuestsPage() {
                   <div className="text-xs opacity-70 mt-1">
                     Difficulty: {sq.difficulty} | Reward: {sq.final_reward}xp
                     <span className="opacity-70">{bonusLabel}</span> | ETC: {etcStr}
+                    {sq.attributeIds?.length ? <span> | Attributes: {sq.attributeIds.length}</span> : null}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
