@@ -50,7 +50,7 @@ export default function SignInPage() {
         <button
           onClick={handleSignIn}
           disabled={loading}
-          className="w-full border rounded-lg px-4 py-2 hover:bg-gray-50 disabled:opacity-50"
+          className="w-full border rounded-lg px-4 py-2 hover:bg-gray-50 hover:text-black disabled:opacity-50"
         >
           {loading ? "Signing in..." : "Continue with Google"}
         </button>

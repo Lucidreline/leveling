@@ -207,7 +207,7 @@ export default function SideQuestsPage() {
           Apply bonus randomness (±25%)
         </label>
 
-        <button className="border rounded px-4 py-2 hover:bg-gray-50" onClick={addSideQuest}>
+        <button className="border rounded px-4 py-2 hover:bg-gray-50 hover:text-black" onClick={addSideQuest}>
           Add side quest
         </button>
       </section>
@@ -234,10 +234,10 @@ export default function SideQuestsPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button className="border rounded px-3 py-2 hover:bg-gray-50" onClick={() => toggleComplete(sq)}>
+                  <button className="border rounded px-3 py-2 hover:bg-gray-50 hover:text-black" onClick={() => toggleComplete(sq)}>
                     {sq.is_complete ? "Mark incomplete" : "Mark complete"}
                   </button>
-                  <button className="border rounded px-3 py-2 hover:bg-gray-50" onClick={() => remove(sq)}>
+                  <button className="border rounded px-3 py-2 hover:bg-gray-50 hover:text-black" onClick={() => remove(sq)}>
                     Delete
                   </button>
                 </div>

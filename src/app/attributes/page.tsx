@@ -125,7 +125,7 @@ export default function AttributesPage() {
             />
           </label>
           <div className="flex items-end">
-            <button className="border rounded px-4 py-2 hover:bg-gray-50 disabled:opacity-50" onClick={addAttribute} disabled={atLimit}>
+            <button className="border rounded px-4 py-2 hover:bg-gray-50 hover:text-black disabled:opacity-50" onClick={addAttribute} disabled={atLimit}>
               Add
             </button>
           </div>
@@ -164,18 +164,18 @@ export default function AttributesPage() {
                   )}
                 </div>
                 <div className="flex items-center gap-2">
-                  <button className="border rounded px-3 py-2 hover:bg-gray-50" onClick={() => openEdit(r)}>
+                  <button className="border rounded px-3 py-2 hover:bg-gray-50 hover:text-black" onClick={() => openEdit(r)}>
                     Edit
                   </button>
                   <button
-                    className="border rounded px-3 py-2 hover:bg-gray-50 disabled:opacity-50"
+                    className="border rounded px-3 py-2 hover:bg-gray-50 hover:text-black disabled:opacity-50"
                     onClick={() => doLevelUp(r)}
                     disabled={!eligible}
                     title={eligible ? "Level up now" : "Meet goals and XP first"}
                   >
                     Level up
                   </button>
-                  <button className="border rounded px-3 py-2 hover:bg-gray-50" onClick={() => removeAttribute(r.id)}>
+                  <button className="border rounded px-3 py-2 hover:bg-gray-50 hover:text-black" onClick={() => removeAttribute(r.id)}>
                     Delete
                   </button>
                 </div>
@@ -206,7 +206,7 @@ export default function AttributesPage() {
                   value={newGoal}
                   onChange={(e) => setNewGoal(e.target.value)}
                 />
-                <button className="border rounded px-3 py-2 hover:bg-gray-50" onClick={addGoal}>
+                <button className="border rounded px-3 py-2 hover:bg-gray-50 hover:text-black" onClick={addGoal}>
                   Add
                 </button>
               </div>
@@ -227,10 +227,10 @@ export default function AttributesPage() {
             </div>
 
             <div className="flex items-center gap-2 justify-end">
-              <button className="border rounded px-4 py-2 hover:bg-gray-50" onClick={() => setEditing(null)}>
+              <button className="border rounded px-4 py-2 hover:bg-gray-50 hover:text-black" onClick={() => setEditing(null)}>
                 Cancel
               </button>
-              <button className="border rounded px-4 py-2 hover:bg-gray-50" onClick={saveEdit}>
+              <button className="border rounded px-4 py-2 hover:bg-gray-50 hover:text-black" onClick={saveEdit}>
                 Save
               </button>
             </div>

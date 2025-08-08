@@ -250,7 +250,7 @@ export default function TasksPage() {
           </label>
         </div>
 
-        <button className="mt-3 border rounded px-4 py-2 hover:bg-gray-50" onClick={handleAdd}>
+        <button className="mt-3 border rounded px-4 py-2 hover:bg-gray-50 hover:text-black" onClick={handleAdd}>
           Add task
         </button>
       </section>
@@ -281,13 +281,13 @@ export default function TasksPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    className="border rounded px-3 py-2 hover:bg-gray-50 disabled:opacity-50"
+                    className="border rounded px-3 py-2 hover:bg-gray-50 disabled:opacity-50 hover:text-black"
                     disabled={completedToday}
                     onClick={() => markTodayComplete(t)}
                   >
                     {completedToday ? "Completed today" : "Mark complete"}
                   </button>
-                  <button className="border rounded px-3 py-2 hover:bg-gray-50" onClick={() => removeTask(t)}>
+                  <button className="border rounded px-3 py-2 hover:bg-gray-50 hover:text-black" onClick={() => removeTask(t)}>
                     Delete
                   </button>
                 </div>

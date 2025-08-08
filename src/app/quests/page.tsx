@@ -262,7 +262,7 @@ export default function QuestsPage() {
           <div className="flex flex-col md:flex-row gap-2">
             <input className="border rounded px-3 py-2 flex-1" placeholder="Milestone name" value={msName} onChange={(e) => setMsName(e.target.value)} />
             <input className="border rounded px-3 py-2 w-40" type="number" min={0} max={100} value={msPct} onChange={(e) => setMsPct(parseInt(e.target.value || "0"))} placeholder="% of reward" />
-            <button className="border rounded px-3 py-2 hover:bg-gray-50" onClick={addMilestone}>
+            <button className="border rounded px-3 py-2 hover:bg-gray-50 hover:text-black" onClick={addMilestone}>
               Add milestone
             </button>
           </div>
@@ -305,7 +305,7 @@ export default function QuestsPage() {
           Apply bonus randomness (±25%)
         </label>
 
-        <button className="border rounded px-4 py-2 hover:bg-gray-50" onClick={addQuest}>
+        <button className="border rounded px-4 py-2 hover:bg-gray-50 hover:text-black" onClick={addQuest}>
           Add quest
         </button>
       </section>
@@ -339,10 +339,10 @@ export default function QuestsPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button className="border rounded px-3 py-2 hover:bg-gray-50" onClick={() => toggleComplete(q)}>
+                    <button className="border rounded px-3 py-2 hover:bg-gray-50 hover:text-black" onClick={() => toggleComplete(q)}>
                       {q.is_complete ? "Mark incomplete" : "Mark complete"}
                     </button>
-                    <button className="border rounded px-3 py-2 hover:bg-gray-50" onClick={() => remove(q)}>
+                    <button className="border rounded px-3 py-2 hover:bg-gray-50 hover:text-black" onClick={() => remove(q)}>
                       Delete
                     </button>
                   </div>
@@ -365,7 +365,7 @@ export default function QuestsPage() {
                               <span className="text-xs px-2 py-1 border rounded">Completed</span>
                             ) : (
                               <button
-                                className="text-xs border rounded px-3 py-1 hover:bg-gray-50"
+                                className="text-xs border rounded px-3 py-1 hover:bg-gray-50 hover:text-black"
                                 onClick={() => completeMilestone(q, i)}
                               >
                                 Complete milestone
