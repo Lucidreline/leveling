@@ -52,7 +52,7 @@ export default function SideQuestsPage() {
       setLoading(false);
       return;
     }
-    const col = collection(db, "users", user.uid, "assignments", "sideQuests");
+    const col = collection(db, "users", user.uid, "sideQuests");
     const q = query(col, orderBy("createdAt", "desc"));
     const unsub = onSnapshot(q, (snap) => {
       const data: SideQuest[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
@@ -77,7 +77,7 @@ export default function SideQuestsPage() {
   const addSideQuest = async () => {
     if (!user) return;
     if (!name.trim()) return;
-    const colRef = collection(db, "users", user.uid, "assignments", "sideQuests");
+    const colRef = collection(db, "users", user.uid, "sideQuests");
     await addDoc(colRef, {
       name: name.trim(),
       description: description.trim() || null,
@@ -97,7 +97,7 @@ export default function SideQuestsPage() {
 
   const toggleComplete = async (sq: SideQuest) => {
     if (!user) return;
-    const ref = doc(db, "users", user.uid, "assignments", "sideQuests", sq.id);
+    const ref = doc(db, "users", user.uid, "sideQuests", sq.id);
     const now = serverTimestamp();
     await updateDoc(ref, {
       is_complete: !sq.is_complete,
@@ -108,7 +108,7 @@ export default function SideQuestsPage() {
 
   const remove = async (sq: SideQuest) => {
     if (!user) return;
-    await deleteDoc(doc(db, "users", user.uid, "assignments", "sideQuests", sq.id));
+    await deleteDoc(doc(db, "users", user.uid, "sideQuests", sq.id));
   };
 
   if (!user) {

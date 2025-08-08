@@ -52,7 +52,7 @@ export default function QuestsPage() {
       setLoading(false);
       return;
     }
-    const col = collection(db, "users", user.uid, "assignments", "quests");
+    const col = collection(db, "users", user.uid, "quests");
     const q = query(col, orderBy("createdAt", "desc"));
     const unsub = onSnapshot(q, (snap) => {
       const data: Quest[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
@@ -78,7 +78,7 @@ export default function QuestsPage() {
   const addQuest = async () => {
     if (!user) return;
     if (!description.trim()) return;
-    const colRef = collection(db, "users", user.uid, "assignments", "quests");
+    const colRef = collection(db, "users", user.uid, "quests");
     await addDoc(colRef, {
       description: description.trim(),
       difficulty: Number(difficulty) || 1,
@@ -97,7 +97,7 @@ export default function QuestsPage() {
 
   const toggleComplete = async (qst: Quest) => {
     if (!user) return;
-    const ref = doc(db, "users", user.uid, "assignments", "quests", qst.id);
+    const ref = doc(db, "users", user.uid, "quests", qst.id);
     const now = serverTimestamp();
     await updateDoc(ref, {
       is_complete: !qst.is_complete,
@@ -108,7 +108,7 @@ export default function QuestsPage() {
 
   const remove = async (qst: Quest) => {
     if (!user) return;
-    await deleteDoc(doc(db, "users", user.uid, "assignments", "quests", qst.id));
+    await deleteDoc(doc(db, "users", user.uid, "quests", qst.id));
   };
 
   if (!user) {

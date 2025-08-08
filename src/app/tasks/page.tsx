@@ -64,7 +64,7 @@ export default function TasksPage() {
       setLoading(false);
       return;
     }
-    const col = collection(db, "users", user.uid, "assignments", "commonTasks");
+    const col = collection(db, "users", user.uid, "commonTasks");
     const q = query(col, orderBy("createdAt", "desc"));
     const unsub = onSnapshot(q, (snap) => {
       const rows: CommonTask[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
@@ -81,7 +81,7 @@ export default function TasksPage() {
     if (!name.trim()) return;
     const now = new Date();
     const next = getNextOccurrence(rrule, now, now.toISOString()) || now;
-    const colRef = collection(db, "users", user.uid, "assignments", "commonTasks");
+    const colRef = collection(db, "users", user.uid, "commonTasks");
     await addDoc(colRef, {
       name: name.trim(),
       description: description.trim() || null,
@@ -112,7 +112,7 @@ export default function TasksPage() {
     const increment = todayIso === dueIso;
     const newStreak = increment ? (t.streak || 0) + 1 : 1;
 
-    const ref = doc(db, "users", user.uid, "assignments", "commonTasks", t.id);
+    const ref = doc(db, "users", user.uid, "commonTasks", t.id);
     await updateDoc(ref, {
       dates_completed: [...t.dates_completed, Timestamp.now()],
       nextDueAt: Timestamp.fromDate(next),
@@ -123,7 +123,7 @@ export default function TasksPage() {
 
   const removeTask = async (t: CommonTask) => {
     if (!user) return;
-    await deleteDoc(doc(db, "users", user.uid, "assignments", "commonTasks", t.id));
+    await deleteDoc(doc(db, "users", user.uid, "commonTasks", t.id));
   };
 
   if (!user) {
