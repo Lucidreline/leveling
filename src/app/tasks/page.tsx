@@ -55,7 +55,10 @@ export default function TasksPage() {
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [difficulty, setDifficulty] = useState<number>(10);
+
+  // number inputs as strings to avoid "150" typing bug
+  const [difficulty, setDifficulty] = useState<string>("10");
+
   const [rrule, setRrule] = useState<string>("FREQ=DAILY");
   const [bonus, setBonus] = useState<boolean>(false);
   const [endDate, setEndDate] = useState<string>("");
@@ -101,21 +104,40 @@ export default function TasksPage() {
 
   const tz = useMemo(() => getBrowserTimezone(), []);
 
+  // number input helpers
+  const clamp = (n: number, min: number, max: number) => Math.min(Math.max(n, min), max);
+  const handleDifficultyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = e.target.value;
+    if (v === "") { setDifficulty(""); return; }
+    const n = parseInt(v, 10);
+    if (Number.isNaN(n)) return;
+    setDifficulty(String(clamp(n, 1, 100)));
+  };
+  const normalizeDifficulty = () => {
+    if (difficulty === "" || Number.isNaN(parseInt(difficulty, 10))) {
+      setDifficulty("1");
+    } else {
+      setDifficulty(String(clamp(parseInt(difficulty, 10), 1, 100)));
+    }
+  };
+
   const handleAdd = async () => {
     if (!user) return;
     if (!name.trim()) return;
+
+    const diffNum = clamp(parseInt(difficulty || "1", 10) || 1, 1, 100);
 
     const now = new Date();
     const next = getNextOccurrence(rrule, now, now.toISOString()) || now;
 
     const { initial_reward, bonus_amount, final_reward, bonus_multiplier } =
-      computeReward("task", Math.min(Math.max(difficulty, 1), 100), bonus);
+      computeReward("task", diffNum, bonus);
 
     const colRef = collection(db, "users", user.uid, "commonTasks");
     await addDoc(colRef, {
       name: name.trim(),
       description: description.trim() || null,
-      difficulty: Math.min(Math.max(Number(difficulty) || 1, 1), 100),
+      difficulty: diffNum,
       initial_reward,
       bonus_amount,
       final_reward,
@@ -135,6 +157,7 @@ export default function TasksPage() {
     setBonus(false);
     setEndDate("");
     setSelectedAttrIds([]);
+    setDifficulty("10");
   };
 
   const markTodayComplete = async (t: CommonTask) => {
@@ -200,7 +223,15 @@ export default function TasksPage() {
 
           <label className="text-sm">
             Difficulty (1–100)
-            <input className="mt-1 border rounded px-3 py-2 w-full" type="number" min={1} max={100} value={difficulty} onChange={(e) => setDifficulty(parseInt(e.target.value || "1"))} />
+            <input
+              className="mt-1 border rounded px-3 py-2 w-full"
+              type="number"
+              min={1}
+              max={100}
+              value={difficulty}
+              onChange={handleDifficultyChange}
+              onBlur={normalizeDifficulty}
+            />
           </label>
 
           <label className="text-sm md:col-span-2">

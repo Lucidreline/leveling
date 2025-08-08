@@ -53,13 +53,16 @@ export default function QuestsPage() {
 
   // creation form
   const [description, setDescription] = useState("");
-  const [difficulty, setDifficulty] = useState<number>(20);
+
+  // numbers as strings to avoid typing issues
+  const [difficulty, setDifficulty] = useState<string>("20");
+  const [msPct, setMsPct] = useState<string>("25");
+
   const [etc, setEtc] = useState<string>("");
   const [bonus, setBonus] = useState<boolean>(false);
 
   // milestones
   const [msName, setMsName] = useState("");
-  const [msPct, setMsPct] = useState<number>(25);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
 
   // attributes
@@ -100,9 +103,41 @@ export default function QuestsPage() {
     return () => unsub();
   }, [user]);
 
+  // helpers
+  const clamp = (n: number, min: number, max: number) => Math.min(Math.max(n, min), max);
+  const handleDifficultyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = e.target.value;
+    if (v === "") { setDifficulty(""); return; }
+    const n = parseInt(v, 10);
+    if (Number.isNaN(n)) return;
+    setDifficulty(String(clamp(n, 1, 100)));
+  };
+  const normalizeDifficulty = () => {
+    if (difficulty === "" || Number.isNaN(parseInt(difficulty, 10))) {
+      setDifficulty("1");
+    } else {
+      setDifficulty(String(clamp(parseInt(difficulty, 10), 1, 100)));
+    }
+  };
+
+  const handleMsPctChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = e.target.value;
+    if (v === "") { setMsPct(""); return; }
+    const n = parseInt(v, 10);
+    if (Number.isNaN(n)) return;
+    setMsPct(String(clamp(n, 0, 100)));
+  };
+  const normalizeMsPct = () => {
+    if (msPct === "" || Number.isNaN(parseInt(msPct, 10))) {
+      setMsPct("0");
+    } else {
+      setMsPct(String(clamp(parseInt(msPct, 10), 0, 100)));
+    }
+  };
+
   const addMilestone = () => {
     if (!msName.trim()) return;
-    const pct = Math.max(0, Math.min(100, Number(msPct) || 0));
+    const pct = clamp(parseInt(msPct || "0", 10) || 0, 0, 100);
     const next = [...milestones, { milestone_name: msName.trim(), reward_percentage: pct, is_complete: false }];
     const val = validateMilestones(next);
     if (!val.ok) {
@@ -111,7 +146,7 @@ export default function QuestsPage() {
     }
     setMilestones(next);
     setMsName("");
-    setMsPct(25);
+    setMsPct("25");
   };
 
   const removeMilestone = (idx: number) => {
@@ -128,7 +163,7 @@ export default function QuestsPage() {
     if (!user) return;
     if (!description.trim()) return;
 
-    const diff = Math.min(Math.max(Number(difficulty) || 1, 1), 100);
+    const diff = clamp(parseInt(difficulty || "1", 10) || 1, 1, 100);
 
     const val = validateMilestones(milestones);
     if (!val.ok) {
@@ -162,6 +197,8 @@ export default function QuestsPage() {
     setBonus(false);
     setMilestones([]);
     setSelectedAttrIds([]);
+    setDifficulty("20");
+    setMsPct("25");
   };
 
   const completeMilestone = async (q: Quest, index: number) => {
@@ -247,7 +284,15 @@ export default function QuestsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <label className="text-sm">
             Difficulty (1–100)
-            <input className="mt-1 border rounded px-3 py-2 w-full" type="number" min={1} max={100} value={difficulty} onChange={(e) => setDifficulty(parseInt(e.target.value || "1"))} />
+            <input
+              className="mt-1 border rounded px-3 py-2 w-full"
+              type="number"
+              min={1}
+              max={100}
+              value={difficulty}
+              onChange={handleDifficultyChange}
+              onBlur={normalizeDifficulty}
+            />
           </label>
 
           <label className="text-sm">
@@ -261,7 +306,16 @@ export default function QuestsPage() {
           <div className="font-medium text-sm">Milestones (total ≤ 100%)</div>
           <div className="flex flex-col md:flex-row gap-2">
             <input className="border rounded px-3 py-2 flex-1" placeholder="Milestone name" value={msName} onChange={(e) => setMsName(e.target.value)} />
-            <input className="border rounded px-3 py-2 w-40" type="number" min={0} max={100} value={msPct} onChange={(e) => setMsPct(parseInt(e.target.value || "0"))} placeholder="% of reward" />
+            <input
+              className="border rounded px-3 py-2 w-40"
+              type="number"
+              min={0}
+              max={100}
+              value={msPct}
+              onChange={handleMsPctChange}
+              onBlur={normalizeMsPct}
+              placeholder="% of reward"
+            />
             <button className="border rounded px-3 py-2 hover:bg-gray-50 hover:text-black" onClick={addMilestone}>
               Add milestone
             </button>

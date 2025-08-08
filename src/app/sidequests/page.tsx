@@ -49,7 +49,10 @@ export default function SideQuestsPage() {
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [difficulty, setDifficulty] = useState<number>(15);
+
+  // number input as string
+  const [difficulty, setDifficulty] = useState<string>("15");
+
   const [etc, setEtc] = useState<string>("");
   const [bonus, setBonus] = useState<boolean>(false);
 
@@ -87,11 +90,28 @@ export default function SideQuestsPage() {
     return () => unsub();
   }, [user]);
 
+  // helpers
+  const clamp = (n: number, min: number, max: number) => Math.min(Math.max(n, min), max);
+  const handleDifficultyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = e.target.value;
+    if (v === "") { setDifficulty(""); return; }
+    const n = parseInt(v, 10);
+    if (Number.isNaN(n)) return;
+    setDifficulty(String(clamp(n, 1, 100)));
+  };
+  const normalizeDifficulty = () => {
+    if (difficulty === "" || Number.isNaN(parseInt(difficulty, 10))) {
+      setDifficulty("1");
+    } else {
+      setDifficulty(String(clamp(parseInt(difficulty, 10), 1, 100)));
+    }
+  };
+
   const addSideQuest = async () => {
     if (!user) return;
     if (!name.trim()) return;
 
-    const diff = Math.min(Math.max(Number(difficulty) || 1, 1), 100);
+    const diff = clamp(parseInt(difficulty || "1", 10) || 1, 1, 100);
     const { initial_reward, bonus_amount, final_reward, bonus_multiplier } =
       computeReward("sidequest", diff, bonus);
 
@@ -118,6 +138,7 @@ export default function SideQuestsPage() {
     setEtc("");
     setBonus(false);
     setSelectedAttrIds([]);
+    setDifficulty("15");
   };
 
   const toggleComplete = async (sq: SideQuest) => {
@@ -173,7 +194,15 @@ export default function SideQuestsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <label className="text-sm">
             Difficulty (1–100)
-            <input className="mt-1 border rounded px-3 py-2 w-full" type="number" min={1} max={100} value={difficulty} onChange={(e) => setDifficulty(parseInt(e.target.value || "1"))} />
+            <input
+              className="mt-1 border rounded px-3 py-2 w-full"
+              type="number"
+              min={1}
+              max={100}
+              value={difficulty}
+              onChange={handleDifficultyChange}
+              onBlur={normalizeDifficulty}
+            />
           </label>
 
           <label className="text-sm">
