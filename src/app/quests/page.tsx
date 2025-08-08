@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { auth, db } from "@/lib/firebase";
 import { User, onAuthStateChanged, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
 import {
@@ -15,15 +15,23 @@ import {
   Timestamp,
   updateDoc,
 } from "firebase/firestore";
+import { computeReward } from "@/lib/rewards";
+
+type Milestone = { milestone_name: string; reward_percentage: number; is_complete: boolean };
 
 type Quest = {
   id: string;
   description: string;
-  difficulty?: number;
-  reward?: number;
-  etc?: Timestamp | null;     // Estimated Time of Completion (date/time)
+  difficulty: number;
+  // rewards
+  initial_reward: number;
+  bonus_amount: number;
+  final_reward: number;
+  bonus_multiplier: number;
+
+  etc?: Timestamp | null;
   is_complete: boolean;
-  milestones?: { milestone_name: string; reward_percentage: number; is_complete: boolean }[];
+  milestones: Milestone[];
   openedAt: Timestamp;
   closedAt?: Timestamp | null;
   createdAt: Timestamp;
@@ -35,11 +43,16 @@ export default function QuestsPage() {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<Quest[]>([]);
 
-  // form state
+  // form
   const [description, setDescription] = useState("");
-  const [difficulty, setDifficulty] = useState<number>(1);
-  const [reward, setReward] = useState<number>(50);
-  const [etc, setEtc] = useState<string>(""); // ISO from <input type="datetime-local">
+  const [difficulty, setDifficulty] = useState<number>(20);
+  const [etc, setEtc] = useState<string>("");
+  const [bonus, setBonus] = useState<boolean>(false);
+
+  // milestone mini-form
+  const [msName, setMsName] = useState("");
+  const [msPct, setMsPct] = useState<number>(25);
+  const [milestones, setMilestones] = useState<Milestone[]>([]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u));
@@ -62,37 +75,49 @@ export default function QuestsPage() {
     return () => unsub();
   }, [user]);
 
-  const suggestEtc = () => {
-    // naive heuristic: difficulty (1–5+) → add N days
-    const days = Math.max(1, Math.min(14, Number(difficulty) || 1));
-    const d = new Date();
-    d.setDate(d.getDate() + days);
-    // format to yyyy-MM-ddTHH:mm (local)
-    const pad = (n: number) => String(n).padStart(2, "0");
-    const local = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(
-      d.getMinutes()
-    )}`;
-    setEtc(local);
+  const addMilestone = () => {
+    if (!msName.trim()) return;
+    const pct = Math.max(0, Math.min(100, Number(msPct) || 0));
+    setMilestones((m) => [...m, { milestone_name: msName.trim(), reward_percentage: pct, is_complete: false }]);
+    setMsName("");
+    setMsPct(25);
+  };
+
+  const removeMilestone = (idx: number) => {
+    setMilestones((m) => m.filter((_, i) => i !== idx));
   };
 
   const addQuest = async () => {
     if (!user) return;
     if (!description.trim()) return;
+
+    const diff = Math.min(Math.max(Number(difficulty) || 1, 1), 100);
+    const { initial_reward, bonus_amount, final_reward, bonus_multiplier } =
+      computeReward("quest", diff, bonus);
+
     const colRef = collection(db, "users", user.uid, "quests");
     await addDoc(colRef, {
       description: description.trim(),
-      difficulty: Number(difficulty) || 1,
-      reward: Number(reward) || 0,
+      difficulty: diff,
+
+      initial_reward,
+      bonus_amount,
+      final_reward,
+      bonus_multiplier,
+
       etc: etc ? Timestamp.fromDate(new Date(etc)) : null,
       is_complete: false,
-      milestones: [],
+      milestones,
       openedAt: serverTimestamp(),
       closedAt: null,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
+
     setDescription("");
     setEtc("");
+    setBonus(false);
+    setMilestones([]);
   };
 
   const toggleComplete = async (qst: Quest) => {
@@ -131,44 +156,89 @@ export default function QuestsPage() {
       <h1 className="text-2xl font-bold">Quests</h1>
 
       {/* Add quest */}
-      <section className="border p-4 rounded-xl">
-        <h2 className="font-semibold mb-3">Add a quest</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <section className="border p-4 rounded-xl space-y-3">
+        <h2 className="font-semibold">Add a quest</h2>
+
+        <label className="text-sm block">
+          Description *
           <input
-            className="border rounded px-3 py-2 md:col-span-2"
-            placeholder="Description *"
+            className="mt-1 border rounded px-3 py-2 w-full"
+            placeholder="Description"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
-          <input
-            className="border rounded px-3 py-2"
-            type="number"
-            min={1}
-            placeholder="Difficulty"
-            value={difficulty}
-            onChange={(e) => setDifficulty(parseInt(e.target.value || "1"))}
-          />
-          <input
-            className="border rounded px-3 py-2"
-            type="number"
-            min={0}
-            placeholder="Reward"
-            value={reward}
-            onChange={(e) => setReward(parseInt(e.target.value || "0"))}
-          />
-          <div className="flex gap-2 items-center md:col-span-2">
+        </label>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label className="text-sm">
+            Difficulty (1–100)
             <input
-              className="border rounded px-3 py-2 w-full"
+              className="mt-1 border rounded px-3 py-2 w-full"
+              type="number"
+              min={1}
+              max={100}
+              value={difficulty}
+              onChange={(e) => setDifficulty(parseInt(e.target.value || "1"))}
+            />
+          </label>
+
+          <label className="text-sm">
+            ETC (date/time)
+            <input
+              className="mt-1 border rounded px-3 py-2 w-full"
               type="datetime-local"
               value={etc}
               onChange={(e) => setEtc(e.target.value)}
             />
-            <button className="border rounded px-3 py-2 hover:bg-gray-50" onClick={suggestEtc}>
-              Suggest ETC
+          </label>
+        </div>
+
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={bonus} onChange={(e) => setBonus(e.target.checked)} />
+          Apply bonus randomness (±25%)
+        </label>
+
+        {/* Milestones */}
+        <div className="border rounded-lg p-3 space-y-2">
+          <div className="font-medium text-sm">Milestones</div>
+          <div className="flex flex-col md:flex-row gap-2">
+            <input
+              className="border rounded px-3 py-2 flex-1"
+              placeholder="Milestone name"
+              value={msName}
+              onChange={(e) => setMsName(e.target.value)}
+            />
+            <input
+              className="border rounded px-3 py-2 w-40"
+              type="number"
+              min={0}
+              max={100}
+              value={msPct}
+              onChange={(e) => setMsPct(parseInt(e.target.value || "0"))}
+              placeholder="% of reward"
+            />
+            <button className="border rounded px-3 py-2 hover:bg-gray-50" onClick={addMilestone}>
+              Add milestone
             </button>
           </div>
+
+          {milestones.length > 0 && (
+            <ul className="text-sm list-disc pl-5">
+              {milestones.map((m, i) => (
+                <li key={i} className="flex items-center justify-between">
+                  <span>
+                    {m.milestone_name} — {m.reward_percentage}% (incomplete)
+                  </span>
+                  <button className="text-xs underline" onClick={() => removeMilestone(i)}>
+                    remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
-        <button className="mt-3 border rounded px-4 py-2 hover:bg-gray-50" onClick={addQuest}>
+
+        <button className="border rounded px-4 py-2 hover:bg-gray-50" onClick={addQuest}>
           Add quest
         </button>
       </section>
@@ -182,19 +252,32 @@ export default function QuestsPage() {
         ) : (
           rows.map((q) => {
             const etcStr = q.etc ? q.etc.toDate().toLocaleString() : "—";
+            const bonusLabel =
+              q.bonus_amount === 0
+                ? ""
+                : q.bonus_amount > 0
+                ? ` +${q.bonus_amount}xp bonus`
+                : ` ${q.bonus_amount}xp bonus`;
             return (
               <div key={q.id} className="border rounded-xl p-4 flex items-start justify-between gap-4">
                 <div>
                   <div className="font-medium">{q.description}</div>
                   <div className="text-xs opacity-70 mt-1">
-                    Difficulty: {q.difficulty ?? "-"} | Reward: {q.reward ?? 0} | ETC: {etcStr}
+                    Difficulty: {q.difficulty} | Reward: {q.final_reward}xp
+                    <span className="opacity-70">{bonusLabel}</span> | ETC: {etcStr}
                   </div>
+                  {q.milestones?.length ? (
+                    <ul className="text-xs mt-2 list-disc pl-5">
+                      {q.milestones.map((m, i) => (
+                        <li key={i}>
+                          {m.milestone_name} — {m.reward_percentage}% ({m.is_complete ? "complete" : "incomplete"})
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
                 </div>
                 <div className="flex items-center gap-2">
-                  <button
-                    className="border rounded px-3 py-2 hover:bg-gray-50"
-                    onClick={() => toggleComplete(q)}
-                  >
+                  <button className="border rounded px-3 py-2 hover:bg-gray-50" onClick={() => toggleComplete(q)}>
                     {q.is_complete ? "Mark incomplete" : "Mark complete"}
                   </button>
                   <button className="border rounded px-3 py-2 hover:bg-gray-50" onClick={() => remove(q)}>

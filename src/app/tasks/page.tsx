@@ -8,7 +8,6 @@ import {
   collection,
   deleteDoc,
   doc,
-  getDocs,
   onSnapshot,
   orderBy,
   query,
@@ -17,26 +16,30 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { getBrowserTimezone, getNextOccurrence, isoDate } from "@/lib/recurrence";
-import { GoogleAuthProvider as GAP } from "firebase/auth";
+import { computeReward } from "@/lib/rewards";
 
 type Recurrence = {
-  rrule: string;           // e.g. "FREQ=WEEKLY;BYDAY=MO,WE,FR"
-  timezone: string;        // e.g. "America/Los_Angeles"
-  anchor?: string;         // ISO datetime to seed the series (optional)
+  rrule: string;
+  timezone: string;
+  anchor?: string;
 };
 
 type CommonTask = {
   id: string;
   name: string;
   description?: string;
-  difficulty?: number;
-  reward?: number;
+  difficulty: number;
+  // reward fields
+  initial_reward: number;
+  bonus_amount: number;
+  final_reward: number;
+  bonus_multiplier: number;
+
   frequency: Recurrence;
   dates_completed: Timestamp[];
   streak: number;
   nextDueAt: Timestamp;
   end_date?: Timestamp | null;
-  templateRef?: any; // reserved if you later add templates
   createdAt: Timestamp;
   updatedAt: Timestamp;
 };
@@ -46,12 +49,13 @@ export default function TasksPage() {
   const [loading, setLoading] = useState(true);
   const [tasks, setTasks] = useState<CommonTask[]>([]);
 
-  // new task form state
+  // form state
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [difficulty, setDifficulty] = useState<number>(1);
-  const [reward, setReward] = useState<number>(10);
+  const [difficulty, setDifficulty] = useState<number>(10);
   const [rrule, setRrule] = useState<string>("FREQ=DAILY");
+  const [bonus, setBonus] = useState<boolean>(false);
+  const [endDate, setEndDate] = useState<string>(""); // datetime-local
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u));
@@ -79,24 +83,37 @@ export default function TasksPage() {
   const handleAdd = async () => {
     if (!user) return;
     if (!name.trim()) return;
+
     const now = new Date();
     const next = getNextOccurrence(rrule, now, now.toISOString()) || now;
+
+    const { initial_reward, bonus_amount, final_reward, bonus_multiplier } =
+      computeReward("task", Math.min(Math.max(difficulty, 1), 100), bonus);
+
     const colRef = collection(db, "users", user.uid, "commonTasks");
     await addDoc(colRef, {
       name: name.trim(),
       description: description.trim() || null,
-      difficulty: Number(difficulty) || 1,
-      reward: Number(reward) || 0,
+      difficulty: Math.min(Math.max(Number(difficulty) || 1, 1), 100),
+
+      initial_reward,
+      bonus_amount,
+      final_reward,
+      bonus_multiplier,
+
       frequency: { rrule, timezone: tz, anchor: now.toISOString() },
       dates_completed: [],
       streak: 0,
       nextDueAt: Timestamp.fromDate(next),
-      end_date: null,
+      end_date: endDate ? Timestamp.fromDate(new Date(endDate)) : null,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
+
     setName("");
     setDescription("");
+    setBonus(false);
+    setEndDate("");
   };
 
   const markTodayComplete = async (t: CommonTask) => {
@@ -107,7 +124,6 @@ export default function TasksPage() {
 
     const after = t.nextDueAt?.toDate() ?? new Date();
     const next = getNextOccurrence(t.frequency.rrule, new Date(after.getTime() + 60_000), t.frequency.anchor) || new Date(after);
-    // simple streak logic: if we completed on/after expected due date day, increment; else reset
     const dueIso = isoDate(after);
     const increment = todayIso === dueIso;
     const newStreak = increment ? (t.streak || 0) + 1 : 1;
@@ -143,55 +159,75 @@ export default function TasksPage() {
 
   return (
     <main className="p-8 max-w-3xl mx-auto space-y-6">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Common Tasks</h1>
-        <div className="text-xs opacity-75">Timezone: {tz}</div>
-      </header>
+      <h1 className="text-2xl font-bold">Common Tasks</h1>
 
       {/* Add task */}
       <section className="border p-4 rounded-xl">
         <h2 className="font-semibold mb-3">Add a task</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <input
-            className="border rounded px-3 py-2"
-            placeholder="Name *"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <select
-            className="border rounded px-3 py-2"
-            value={rrule}
-            onChange={(e) => setRrule(e.target.value)}
-          >
-            <option value="FREQ=DAILY">Every day</option>
-            <option value="FREQ=WEEKLY;BYDAY=MO,WE,FR">Mon/Wed/Fri</option>
-            <option value="FREQ=WEEKLY;BYDAY=SA,SU">Weekends</option>
-            <option value="FREQ=WEEKLY">Once a week</option>
-            <option value="FREQ=MONTHLY;BYMONTHDAY=1">1st of every month</option>
-          </select>
-          <input
-            className="border rounded px-3 py-2 md:col-span-2"
-            placeholder="Description (optional)"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-          <input
-            className="border rounded px-3 py-2"
-            type="number"
-            min={1}
-            placeholder="Difficulty (1+)"
-            value={difficulty}
-            onChange={(e) => setDifficulty(parseInt(e.target.value || "1"))}
-          />
-          <input
-            className="border rounded px-3 py-2"
-            type="number"
-            min={0}
-            placeholder="Reward"
-            value={reward}
-            onChange={(e) => setReward(parseInt(e.target.value || "0"))}
-          />
+          <label className="text-sm">
+            Name *
+            <input
+              className="mt-1 border rounded px-3 py-2 w-full"
+              placeholder="Name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </label>
+
+          <label className="text-sm">
+            Difficulty (1–100)
+            <input
+              className="mt-1 border rounded px-3 py-2 w-full"
+              type="number"
+              min={1}
+              max={100}
+              value={difficulty}
+              onChange={(e) => setDifficulty(parseInt(e.target.value || "1"))}
+            />
+          </label>
+
+          <label className="text-sm md:col-span-2">
+            Description (optional)
+            <input
+              className="mt-1 border rounded px-3 py-2 w-full"
+              placeholder="Description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </label>
+
+          <label className="text-sm">
+            Frequency
+            <select
+              className="mt-1 border rounded px-3 py-2 w-full"
+              value={rrule}
+              onChange={(e) => setRrule(e.target.value)}
+            >
+              <option value="FREQ=DAILY">Every day</option>
+              <option value="FREQ=WEEKLY;BYDAY=MO,WE,FR">Mon/Wed/Fri</option>
+              <option value="FREQ=WEEKLY;BYDAY=SA,SU">Weekends</option>
+              <option value="FREQ=WEEKLY">Once a week</option>
+              <option value="FREQ=MONTHLY;BYMONTHDAY=1">1st of every month</option>
+            </select>
+          </label>
+
+          <label className="text-sm">
+            End date (optional)
+            <input
+              className="mt-1 border rounded px-3 py-2 w-full"
+              type="datetime-local"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+            />
+          </label>
+
+          <label className="flex items-center gap-2 text-sm md:col-span-2">
+            <input type="checkbox" checked={bonus} onChange={(e) => setBonus(e.target.checked)} />
+            Apply bonus randomness (±25%)
+          </label>
         </div>
+
         <button className="mt-3 border rounded px-4 py-2 hover:bg-gray-50" onClick={handleAdd}>
           Add task
         </button>
@@ -208,13 +244,21 @@ export default function TasksPage() {
             const next = t.nextDueAt?.toDate();
             const nextStr = next ? `${next.toLocaleString()}` : "—";
             const completedToday = t.dates_completed.some((ts) => isoDate(ts.toDate()) === isoDate());
+            const bonusLabel =
+              t.bonus_amount === 0
+                ? ""
+                : t.bonus_amount > 0
+                ? ` +${t.bonus_amount}xp bonus`
+                : ` ${t.bonus_amount}xp bonus`;
+
             return (
               <div key={t.id} className="border rounded-xl p-4 flex items-start justify-between gap-4">
                 <div>
                   <div className="font-medium">{t.name}</div>
                   {t.description ? <div className="text-sm opacity-80">{t.description}</div> : null}
                   <div className="mt-1 text-xs opacity-70">
-                    RRULE: {t.frequency?.rrule} &nbsp;|&nbsp; Next due: {nextStr} &nbsp;|&nbsp; Streak: {t.streak ?? 0}
+                    Difficulty: {t.difficulty} | Reward: {t.final_reward}xp
+                    <span className="opacity-70">{bonusLabel}</span> | Next due: {nextStr} | Streak: {t.streak ?? 0}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -225,11 +269,7 @@ export default function TasksPage() {
                   >
                     {completedToday ? "Completed today" : "Mark complete"}
                   </button>
-                  <button
-                    className="border rounded px-3 py-2 hover:bg-gray-50"
-                    onClick={() => removeTask(t)}
-                    title="Delete task"
-                  >
+                  <button className="border rounded px-3 py-2 hover:bg-gray-50" onClick={() => removeTask(t)}>
                     Delete
                   </button>
                 </div>
