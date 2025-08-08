@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { auth, db } from "@/lib/firebase";
-import { User, onAuthStateChanged, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
+import { User, onAuthStateChanged } from "firebase/auth";
 import {
   addDoc,
   collection,
@@ -16,34 +16,43 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { computeReward } from "@/lib/rewards";
+import { awardXp } from "@/lib/xp";
+import { awardAttributeXp } from "@/lib/attributes";
+import Link from "next/link";
 
 type SideQuest = {
   id: string;
   name: string;
   description?: string;
   difficulty: number;
-
   initial_reward: number;
   bonus_amount: number;
   final_reward: number;
   bonus_multiplier: number;
-
   etc?: Timestamp | null;
   is_complete: boolean;
+  attributeIds?: string[];
   openedAt: Timestamp;
   closedAt?: Timestamp | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 };
 
+type AttrOption = { id: string; name: string };
+
 export default function SideQuestsPage() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<SideQuest[]>([]);
+  const [attrs, setAttrs] = useState<AttrOption[]>([]);
+  const [selectedAttrIds, setSelectedAttrIds] = useState<string[]>([]);
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [difficulty, setDifficulty] = useState<number>(15);
+
+  // number input as string
+  const [difficulty, setDifficulty] = useState<string>("15");
+
   const [etc, setEtc] = useState<string>("");
   const [bonus, setBonus] = useState<boolean>(false);
 
@@ -68,11 +77,41 @@ export default function SideQuestsPage() {
     return () => unsub();
   }, [user]);
 
+  // attributes
+  useEffect(() => {
+    if (!user) {
+      setAttrs([]);
+      return;
+    }
+    const col = collection(db, "users", user.uid, "attributes");
+    const unsub = onSnapshot(col, (snap) => {
+      setAttrs(snap.docs.map((d) => ({ id: d.id, name: (d.data() as any).name })));
+    });
+    return () => unsub();
+  }, [user]);
+
+  // helpers
+  const clamp = (n: number, min: number, max: number) => Math.min(Math.max(n, min), max);
+  const handleDifficultyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = e.target.value;
+    if (v === "") { setDifficulty(""); return; }
+    const n = parseInt(v, 10);
+    if (Number.isNaN(n)) return;
+    setDifficulty(String(clamp(n, 1, 100)));
+  };
+  const normalizeDifficulty = () => {
+    if (difficulty === "" || Number.isNaN(parseInt(difficulty, 10))) {
+      setDifficulty("1");
+    } else {
+      setDifficulty(String(clamp(parseInt(difficulty, 10), 1, 100)));
+    }
+  };
+
   const addSideQuest = async () => {
     if (!user) return;
     if (!name.trim()) return;
 
-    const diff = Math.min(Math.max(Number(difficulty) || 1, 1), 100);
+    const diff = clamp(parseInt(difficulty || "1", 10) || 1, 1, 100);
     const { initial_reward, bonus_amount, final_reward, bonus_multiplier } =
       computeReward("sidequest", diff, bonus);
 
@@ -81,14 +120,13 @@ export default function SideQuestsPage() {
       name: name.trim(),
       description: description.trim() || null,
       difficulty: diff,
-
       initial_reward,
       bonus_amount,
       final_reward,
       bonus_multiplier,
-
       etc: etc ? Timestamp.fromDate(new Date(etc)) : null,
       is_complete: false,
+      attributeIds: selectedAttrIds,
       openedAt: serverTimestamp(),
       closedAt: null,
       createdAt: serverTimestamp(),
@@ -99,17 +137,27 @@ export default function SideQuestsPage() {
     setDescription("");
     setEtc("");
     setBonus(false);
+    setSelectedAttrIds([]);
+    setDifficulty("15");
   };
 
   const toggleComplete = async (sq: SideQuest) => {
     if (!user) return;
     const ref = doc(db, "users", user.uid, "sideQuests", sq.id);
     const now = serverTimestamp();
+    const toComplete = !sq.is_complete;
+
     await updateDoc(ref, {
-      is_complete: !sq.is_complete,
-      closedAt: sq.is_complete ? null : now,
+      is_complete: toComplete,
+      closedAt: toComplete ? now : null,
       updatedAt: now,
     });
+
+    const delta = toComplete ? sq.final_reward : -sq.final_reward;
+    await awardXp(user.uid, delta);
+    if (sq.attributeIds?.length) {
+      await awardAttributeXp(user.uid, sq.attributeIds, delta);
+    }
   };
 
   const remove = async (sq: SideQuest) => {
@@ -117,17 +165,16 @@ export default function SideQuestsPage() {
     await deleteDoc(doc(db, "users", user.uid, "sideQuests", sq.id));
   };
 
+  const toggleSelectAttr = (id: string) => {
+    setSelectedAttrIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
   if (!user) {
     return (
       <main className="p-8 max-w-2xl mx-auto">
         <h1 className="text-2xl font-bold">Side Quests</h1>
         <p className="mt-4 text-sm">You need to sign in to manage side quests.</p>
-        <button
-          className="mt-4 border rounded-lg px-4 py-2 hover:bg-gray-50"
-          onClick={() => signInWithPopup(auth, new GoogleAuthProvider())}
-        >
-          Sign in with Google
-        </button>
+        <Link href="/signin" className="mt-4 inline-block underline">Go to sign in</Link>
       </main>
     );
   }
@@ -136,18 +183,12 @@ export default function SideQuestsPage() {
     <main className="p-8 max-w-3xl mx-auto space-y-6">
       <h1 className="text-2xl font-bold">Side Quests</h1>
 
-      {/* Add side quest */}
       <section className="border p-4 rounded-xl space-y-3">
         <h2 className="font-semibold">Add a side quest</h2>
 
         <label className="text-sm block">
           Name *
-          <input
-            className="mt-1 border rounded px-3 py-2 w-full"
-            placeholder="Name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
+          <input className="mt-1 border rounded px-3 py-2 w-full" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
         </label>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -159,32 +200,47 @@ export default function SideQuestsPage() {
               min={1}
               max={100}
               value={difficulty}
-              onChange={(e) => setDifficulty(parseInt(e.target.value || "1"))}
+              onChange={handleDifficultyChange}
+              onBlur={normalizeDifficulty}
             />
           </label>
 
           <label className="text-sm">
             ETC (date/time)
-            <input
-              className="mt-1 border rounded px-3 py-2 w-full"
-              type="datetime-local"
-              value={etc}
-              onChange={(e) => setEtc(e.target.value)}
-            />
+            <input className="mt-1 border rounded px-3 py-2 w-full" type="datetime-local" value={etc} onChange={(e) => setEtc(e.target.value)} />
           </label>
         </div>
+
+        <fieldset className="text-sm">
+          <legend className="mb-1">Attach attributes (optional)</legend>
+          {attrs.length === 0 ? (
+            <div className="text-xs opacity-70">No attributes yet. Create some on the Attributes page.</div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {attrs.map((a) => (
+                <label key={a.id} className="flex items-center gap-2 border rounded px-2 py-1">
+                  <input
+                    type="checkbox"
+                    checked={selectedAttrIds.includes(a.id)}
+                    onChange={() => toggleSelectAttr(a.id)}
+                  />
+                  {a.name}
+                </label>
+              ))}
+            </div>
+          )}
+        </fieldset>
 
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={bonus} onChange={(e) => setBonus(e.target.checked)} />
           Apply bonus randomness (±25%)
         </label>
 
-        <button className="border rounded px-4 py-2 hover:bg-gray-50" onClick={addSideQuest}>
+        <button className="border rounded px-4 py-2 hover:bg-gray-50 hover:text-black" onClick={addSideQuest}>
           Add side quest
         </button>
       </section>
 
-      {/* List */}
       <section className="space-y-3">
         {loading ? (
           <div className="text-sm opacity-70">Loading…</div>
@@ -194,11 +250,7 @@ export default function SideQuestsPage() {
           rows.map((sq) => {
             const etcStr = sq.etc ? sq.etc.toDate().toLocaleString() : "—";
             const bonusLabel =
-              sq.bonus_amount === 0
-                ? ""
-                : sq.bonus_amount > 0
-                ? ` +${sq.bonus_amount}xp bonus`
-                : ` ${sq.bonus_amount}xp bonus`;
+              sq.bonus_amount === 0 ? "" : sq.bonus_amount > 0 ? ` +${sq.bonus_amount}xp bonus` : ` ${sq.bonus_amount}xp bonus`;
             return (
               <div key={sq.id} className="border rounded-xl p-4 flex items-start justify-between gap-4">
                 <div>
@@ -207,13 +259,14 @@ export default function SideQuestsPage() {
                   <div className="text-xs opacity-70 mt-1">
                     Difficulty: {sq.difficulty} | Reward: {sq.final_reward}xp
                     <span className="opacity-70">{bonusLabel}</span> | ETC: {etcStr}
+                    {sq.attributeIds?.length ? <span> | Attributes: {sq.attributeIds.length}</span> : null}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button className="border rounded px-3 py-2 hover:bg-gray-50" onClick={() => toggleComplete(sq)}>
+                  <button className="border rounded px-3 py-2 hover:bg-gray-50 hover:text-black" onClick={() => toggleComplete(sq)}>
                     {sq.is_complete ? "Mark incomplete" : "Mark complete"}
                   </button>
-                  <button className="border rounded px-3 py-2 hover:bg-gray-50" onClick={() => remove(sq)}>
+                  <button className="border rounded px-3 py-2 hover:bg-gray-50 hover:text-black" onClick={() => remove(sq)}>
                     Delete
                   </button>
                 </div>
