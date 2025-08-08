@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { auth, db } from "@/lib/firebase";
-import { User, onAuthStateChanged, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
+import { User, onAuthStateChanged } from "firebase/auth";
 import {
   addDoc,
   collection,
@@ -17,6 +17,7 @@ import {
 } from "firebase/firestore";
 import { getBrowserTimezone, getNextOccurrence, isoDate } from "@/lib/recurrence";
 import { computeReward } from "@/lib/rewards";
+import Link from "next/link";
 
 type Recurrence = {
   rrule: string;
@@ -29,12 +30,10 @@ type CommonTask = {
   name: string;
   description?: string;
   difficulty: number;
-  // reward fields
   initial_reward: number;
   bonus_amount: number;
   final_reward: number;
   bonus_multiplier: number;
-
   frequency: Recurrence;
   dates_completed: Timestamp[];
   streak: number;
@@ -49,13 +48,12 @@ export default function TasksPage() {
   const [loading, setLoading] = useState(true);
   const [tasks, setTasks] = useState<CommonTask[]>([]);
 
-  // form state
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [difficulty, setDifficulty] = useState<number>(10);
   const [rrule, setRrule] = useState<string>("FREQ=DAILY");
   const [bonus, setBonus] = useState<boolean>(false);
-  const [endDate, setEndDate] = useState<string>(""); // datetime-local
+  const [endDate, setEndDate] = useState<string>("");
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => setUser(u));
@@ -95,12 +93,10 @@ export default function TasksPage() {
       name: name.trim(),
       description: description.trim() || null,
       difficulty: Math.min(Math.max(Number(difficulty) || 1, 1), 100),
-
       initial_reward,
       bonus_amount,
       final_reward,
       bonus_multiplier,
-
       frequency: { rrule, timezone: tz, anchor: now.toISOString() },
       dates_completed: [],
       streak: 0,
@@ -123,7 +119,11 @@ export default function TasksPage() {
     if (alreadyDoneToday) return;
 
     const after = t.nextDueAt?.toDate() ?? new Date();
-    const next = getNextOccurrence(t.frequency.rrule, new Date(after.getTime() + 60_000), t.frequency.anchor) || new Date(after);
+    const next = getNextOccurrence(
+      t.frequency.rrule,
+      new Date(after.getTime() + 60_000),
+      t.frequency.anchor
+    ) || new Date(after);
     const dueIso = isoDate(after);
     const increment = todayIso === dueIso;
     const newStreak = increment ? (t.streak || 0) + 1 : 1;
@@ -147,12 +147,9 @@ export default function TasksPage() {
       <main className="p-8 max-w-2xl mx-auto">
         <h1 className="text-2xl font-bold">Tasks</h1>
         <p className="mt-4 text-sm">You need to sign in to manage tasks.</p>
-        <button
-          className="mt-4 border rounded-lg px-4 py-2 hover:bg-gray-50"
-          onClick={() => signInWithPopup(auth, new GoogleAuthProvider())}
-        >
-          Sign in with Google
-        </button>
+        <Link href="/signin" className="mt-4 inline-block underline">
+          Go to sign in
+        </Link>
       </main>
     );
   }
@@ -161,7 +158,6 @@ export default function TasksPage() {
     <main className="p-8 max-w-3xl mx-auto space-y-6">
       <h1 className="text-2xl font-bold">Common Tasks</h1>
 
-      {/* Add task */}
       <section className="border p-4 rounded-xl">
         <h2 className="font-semibold mb-3">Add a task</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -233,7 +229,6 @@ export default function TasksPage() {
         </button>
       </section>
 
-      {/* List */}
       <section className="space-y-3">
         {loading ? (
           <div className="text-sm opacity-70">Loading…</div>

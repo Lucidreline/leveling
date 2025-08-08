@@ -138,15 +138,10 @@ export default function QuestsPage() {
 
   if (!user) {
     return (
-      <main className="p-8 max-w-2xl mx-auto">
+     <main className="p-8 max-w-2xl mx-auto">
         <h1 className="text-2xl font-bold">Quests</h1>
         <p className="mt-4 text-sm">You need to sign in to manage quests.</p>
-        <button
-          className="mt-4 border rounded-lg px-4 py-2 hover:bg-gray-50"
-          onClick={() => signInWithPopup(auth, new GoogleAuthProvider())}
-        >
-          Sign in with Google
-        </button>
+        <a href="/signin" className="mt-4 inline-block underline">Go to sign in</a>
       </main>
     );
   }
