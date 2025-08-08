@@ -3,14 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged, User } from "firebase/auth";
-import {
-  doc,
-  getDoc,
-  onSnapshot,
-  serverTimestamp,
-  setDoc,
-  updateDoc,
-} from "firebase/firestore";
+import { doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
 import { xpRequiredForLevel } from "@/lib/progression";
 
 type UserDoc = {
@@ -26,7 +19,6 @@ export default function Home() {
   const [userDoc, setUserDoc] = useState<UserDoc | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // username modal state
   const [usernameInput, setUsernameInput] = useState("");
   const needsUsername = user && userDoc && (userDoc.username === null || userDoc.username === "");
 
@@ -41,7 +33,6 @@ export default function Home() {
 
       const ref = doc(db, "users", u.uid);
 
-      // Ensure user doc exists
       const snap = await getDoc(ref);
       if (!snap.exists()) {
         await setDoc(
@@ -57,7 +48,6 @@ export default function Home() {
         );
       }
 
-      // Live subscribe
       const unsubUser = onSnapshot(ref, (s) => {
         const data = s.data() as UserDoc | undefined;
         if (data) {
@@ -86,24 +76,16 @@ export default function Home() {
       return;
     }
     const ref = doc(db, "users", user.uid);
-    await updateDoc(ref, {
-      username: name,
-      updatedAt: serverTimestamp(),
-    });
+    await updateDoc(ref, { username: name, updatedAt: serverTimestamp() });
     setUsernameInput("");
   };
 
-  // Compute next-level requirement + progress
   const { reqXp, pct, nextLevelLabel } = useMemo(() => {
     const lvl = userDoc?.level ?? 1;
     const curXp = userDoc?.xp ?? 0;
-    const req = xpRequiredForLevel(lvl); // XP needed to reach lvl+1
+    const req = xpRequiredForLevel(lvl);
     const clamped = Math.max(0, Math.min(1, req > 0 ? curXp / req : 0));
-    return {
-      reqXp: req,
-      pct: Math.round(clamped * 100),
-      nextLevelLabel: `Level ${lvl + 1}`,
-    };
+    return { reqXp: req, pct: Math.round(clamped * 100), nextLevelLabel: `Level ${lvl + 1}` };
   }, [userDoc?.level, userDoc?.xp]);
 
   return (
@@ -119,65 +101,47 @@ export default function Home() {
         </div>
       ) : (
         <>
-          {/* Welcome + Level card */}
           <section className="border rounded-2xl p-6 space-y-3">
             <h1 className="text-2xl font-bold">
-              {userDoc?.username ? (
-                <>Welcome <span className="font-extrabold">{userDoc.username}</span>.</>
-              ) : (
-                <>Welcome.</>
-              )}
+              {userDoc?.username ? <>Welcome <span className="font-extrabold">{userDoc.username}</span>.</> : <>Welcome.</>}
             </h1>
 
             <div className="grid gap-2 text-sm">
               <div>Level: <span className="font-semibold">{userDoc?.level ?? 1}</span></div>
             </div>
 
-            {/* Progress toward next level */}
-           <div className="mt-2">
-  <div className="flex items-center justify-between text-xs mb-1">
-    <span>Progress to {nextLevelLabel}</span>
-    <span>{userDoc?.xp ?? 0} / {reqXp} XP ({pct}%)</span>
-  </div>
-  <div
-    className="w-full h-3 rounded-full overflow-hidden"
-    style={{ backgroundColor: "#444" }} // darker gray for better contrast
-    aria-label="XP progress bar"
-  >
-    <div
-      style={{
-        width: `${pct}%`,
-        backgroundColor: "#4ade80", // bright green for contrast
-        height: "100%",
-      }}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={pct}
-      role="progressbar"
-    />
-  </div>
-</div>
+            <div className="mt-2">
+              <div className="flex items-center justify-between text-xs mb-1">
+                <span>Progress to {nextLevelLabel}</span>
+                <span>{userDoc?.xp ?? 0} / {reqXp} XP ({pct}%)</span>
+              </div>
+              <div className="w-full h-3 rounded-full overflow-hidden" style={{ backgroundColor: "#444" }} aria-label="XP progress bar">
+                <div
+                  style={{ width: `${pct}%`, backgroundColor: "#4ade80", height: "100%" }}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={pct}
+                  role="progressbar"
+                />
+              </div>
+            </div>
           </section>
 
-          {/* Username modal */}
+          {/* Username modal with strong contrast */}
           {needsUsername && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
+              <div className="bg-white text-gray-900 rounded-2xl p-6 w-full max-w-sm shadow-xl">
                 <h2 className="text-lg font-semibold">Choose a username</h2>
-                <p className="text-sm opacity-70 mt-1">
-                  This doesn’t have to be unique. You can change it later.
-                </p>
+                <p className="text-sm opacity-70 mt-1">This doesn’t have to be unique. You can change it later.</p>
                 <input
-                  className="mt-4 border rounded px-3 py-2 w-full"
+                  className="mt-4 border border-gray-300 rounded px-3 py-2 w-full bg-white text-gray-900 placeholder-gray-500"
                   placeholder="Enter a username"
                   value={usernameInput}
                   onChange={(e) => setUsernameInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") saveUsername();
-                  }}
+                  onKeyDown={(e) => { if (e.key === "Enter") saveUsername(); }}
                 />
                 <div className="mt-4 flex items-center gap-2">
-                  <button className="border rounded px-4 py-2 hover:bg-gray-50" onClick={saveUsername}>
+                  <button className="border border-gray-300 rounded px-4 py-2 hover:bg-gray-900 hover:text-white" onClick={saveUsername}>
                     Save
                   </button>
                 </div>

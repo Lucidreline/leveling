@@ -188,25 +188,29 @@ export default function AttributesPage() {
       {/* Edit modal */}
       {editing && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-lg shadow-xl space-y-3">
+          <div className="bg-white text-gray-900 rounded-2xl p-6 w-full max-w-lg shadow-xl space-y-3">
             <h2 className="text-lg font-semibold">Edit attribute</h2>
 
             <label className="text-sm block">
               Name
-              <input className="mt-1 border rounded px-3 py-2 w-full" value={editName} onChange={(e) => setEditName(e.target.value)} />
+              <input
+                className="mt-1 border border-gray-300 rounded px-3 py-2 w-full bg-white text-gray-900 placeholder-gray-500"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+              />
             </label>
 
-            <div className="border rounded p-3">
+            <div className="border border-gray-300 rounded p-3">
               <div className="text-sm font-medium mb-2">Goals (for next level)</div>
 
               <div className="flex gap-2">
                 <input
-                  className="border rounded px-3 py-2 flex-1"
+                  className="border border-gray-300 rounded px-3 py-2 flex-1 bg-white text-gray-900 placeholder-gray-500"
                   placeholder="Add a goal (e.g., 10 pull-ups)"
                   value={newGoal}
                   onChange={(e) => setNewGoal(e.target.value)}
                 />
-                <button className="border rounded px-3 py-2 hover:bg-gray-50 hover:text-black" onClick={addGoal}>
+                <button className="border border-gray-300 rounded px-3 py-2 hover:bg-gray-900 hover:text-white" onClick={addGoal}>
                   Add
                 </button>
               </div>
@@ -226,14 +230,20 @@ export default function AttributesPage() {
               </ul>
             </div>
 
-            <div className="flex items-center gap-2 justify-end">
-              <button className="border rounded px-4 py-2 hover:bg-gray-50 hover:text-black" onClick={() => setEditing(null)}>
-                Cancel
-              </button>
-              <button className="border rounded px-4 py-2 hover:bg-gray-50 hover:text-black" onClick={saveEdit}>
-                Save
-              </button>
-            </div>
+              <div className="flex items-center gap-2 justify-end">
+                <button
+                  className="border border-gray-300 rounded px-4 py-2 hover:bg-gray-900 hover:text-white"
+                  onClick={() => setEditing(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="border border-gray-300 rounded px-4 py-2 hover:bg-gray-900 hover:text-white"
+                  onClick={saveEdit}
+                >
+                  Save
+                </button>
+              </div>
           </div>
         </div>
       )}
