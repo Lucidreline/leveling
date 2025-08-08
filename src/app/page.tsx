@@ -1,16 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged, User } from "firebase/auth";
 import {
   doc,
   getDoc,
-  setDoc,
   onSnapshot,
   serverTimestamp,
+  setDoc,
   updateDoc,
 } from "firebase/firestore";
+import { xpRequiredForLevel } from "@/lib/progression";
 
 type UserDoc = {
   username: string | null;
@@ -40,7 +41,7 @@ export default function Home() {
 
       const ref = doc(db, "users", u.uid);
 
-      // Ensure a user doc exists (level=1, xp=0, username=null if missing)
+      // Ensure user doc exists
       const snap = await getDoc(ref);
       if (!snap.exists()) {
         await setDoc(
@@ -56,7 +57,7 @@ export default function Home() {
         );
       }
 
-      // Live subscribe to user doc
+      // Live subscribe
       const unsubUser = onSnapshot(ref, (s) => {
         const data = s.data() as UserDoc | undefined;
         if (data) {
@@ -92,6 +93,19 @@ export default function Home() {
     setUsernameInput("");
   };
 
+  // Compute next-level requirement + progress
+  const { reqXp, pct, nextLevelLabel } = useMemo(() => {
+    const lvl = userDoc?.level ?? 1;
+    const curXp = userDoc?.xp ?? 0;
+    const req = xpRequiredForLevel(lvl); // XP needed to reach lvl+1
+    const clamped = Math.max(0, Math.min(1, req > 0 ? curXp / req : 0));
+    return {
+      reqXp: req,
+      pct: Math.round(clamped * 100),
+      nextLevelLabel: `Level ${lvl + 1}`,
+    };
+  }, [userDoc?.level, userDoc?.xp]);
+
   return (
     <main className="p-8 max-w-3xl mx-auto">
       {loading ? (
@@ -105,8 +119,8 @@ export default function Home() {
         </div>
       ) : (
         <>
-          {/* Welcome card */}
-          <section className="border rounded-2xl p-6">
+          {/* Welcome + Level card */}
+          <section className="border rounded-2xl p-6 space-y-3">
             <h1 className="text-2xl font-bold">
               {userDoc?.username ? (
                 <>Welcome <span className="font-extrabold">{userDoc.username}</span>.</>
@@ -114,13 +128,38 @@ export default function Home() {
                 <>Welcome.</>
               )}
             </h1>
-            <div className="mt-2 text-sm">
+
+            <div className="grid gap-2 text-sm">
               <div>Level: <span className="font-semibold">{userDoc?.level ?? 1}</span></div>
-              <div>XP: <span className="font-semibold">{userDoc?.xp ?? 0}</span></div>
             </div>
+
+            {/* Progress toward next level */}
+           <div className="mt-2">
+  <div className="flex items-center justify-between text-xs mb-1">
+    <span>Progress to {nextLevelLabel}</span>
+    <span>{userDoc?.xp ?? 0} / {reqXp} XP ({pct}%)</span>
+  </div>
+  <div
+    className="w-full h-3 rounded-full overflow-hidden"
+    style={{ backgroundColor: "#444" }} // darker gray for better contrast
+    aria-label="XP progress bar"
+  >
+    <div
+      style={{
+        width: `${pct}%`,
+        backgroundColor: "#4ade80", // bright green for contrast
+        height: "100%",
+      }}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={pct}
+      role="progressbar"
+    />
+  </div>
+</div>
           </section>
 
-          {/* Username modal (shown if missing) */}
+          {/* Username modal */}
           {needsUsername && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
               <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
@@ -138,10 +177,7 @@ export default function Home() {
                   }}
                 />
                 <div className="mt-4 flex items-center gap-2">
-                  <button
-                    className="border rounded px-4 py-2 hover:bg-gray-50"
-                    onClick={saveUsername}
-                  >
+                  <button className="border rounded px-4 py-2 hover:bg-gray-50" onClick={saveUsername}>
                     Save
                   </button>
                 </div>

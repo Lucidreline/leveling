@@ -1,21 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged, User } from "firebase/auth";
 import {
-  addDoc,
-  collection,
-  deleteDoc,
-  doc,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  updateDoc,
+  addDoc, collection, deleteDoc, doc, onSnapshot, orderBy, query, serverTimestamp, updateDoc,
 } from "firebase/firestore";
 import Link from "next/link";
-import { AttributeDoc, AttributeGoal, canLevelUp, levelUpAttribute } from "@/lib/attributes";
+import {
+  AttributeDoc, AttributeGoal, canLevelUp, levelUpAttribute, requiredXpForAttributeLevel,
+} from "@/lib/attributes";
 
 type AttributeRow = AttributeDoc & { id: string };
 
@@ -26,69 +20,50 @@ export default function AttributesPage() {
 
   // create form
   const [name, setName] = useState("");
-  const [xpRequired, setXpRequired] = useState<number>(100);
 
   // edit modal state
   const [editing, setEditing] = useState<AttributeRow | null>(null);
   const [editName, setEditName] = useState("");
-  const [editXpReq, setEditXpReq] = useState<number>(100);
   const [editGoals, setEditGoals] = useState<AttributeGoal[]>([]);
   const [newGoal, setNewGoal] = useState("");
 
+  useEffect(() => onAuthStateChanged(auth, setUser), []);
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => setUser(u));
-    return () => unsub();
-  }, []);
-
-  useEffect(() => {
-    if (!user) {
-      setRows([]);
-      setLoading(false);
-      return;
-    }
+    if (!user) { setRows([]); setLoading(false); return; }
     const col = collection(db, "users", user.uid, "attributes");
     const q = query(col, orderBy("createdAt", "desc"));
-    const unsub = onSnapshot(q, (snap) => {
-      const data: AttributeRow[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
-      setRows(data);
+    return onSnapshot(q, (snap) => {
+      setRows(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
       setLoading(false);
     });
-    return () => unsub();
   }, [user]);
 
   const atLimit = rows.length >= 5;
 
   const addAttribute = async () => {
-    if (!user) return;
-    if (!name.trim()) return;
-    if (atLimit) {
-      alert("You can only have up to 5 attributes.");
-      return;
-    }
+    if (!user || !name.trim() || atLimit) return;
     const colRef = collection(db, "users", user.uid, "attributes");
     await addDoc(colRef, {
       name: name.trim(),
       level: 1,
       xp: 0,
-      nextLevel: { xp_required: Math.max(0, xpRequired || 0), goals: [] },
+      nextLevel: { goals: [] },
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
     setName("");
-    setXpRequired(100);
   };
 
   const removeAttribute = async (id: string) => {
     if (!user) return;
-    if (!confirm("Delete this attribute? This cannot be undone.")) return;
+    if (!confirm("Delete this attribute?")) return;
     await deleteDoc(doc(db, "users", user.uid, "attributes", id));
   };
 
   const openEdit = (row: AttributeRow) => {
     setEditing(row);
     setEditName(row.name);
-    setEditXpReq(row.nextLevel?.xp_required ?? 100);
-    setEditGoals([...((row.nextLevel?.goals as AttributeGoal[]) || [])]);
+    setEditGoals([...(row.nextLevel?.goals || [])]);
     setNewGoal("");
   };
 
@@ -97,23 +72,14 @@ export default function AttributesPage() {
     const ref = doc(db, "users", user.uid, "attributes", editing.id);
     await updateDoc(ref, {
       name: editName.trim() || editing.name,
-      nextLevel: {
-        xp_required: Math.max(0, Number(editXpReq) || 0),
-        goals: editGoals.map((g) => ({
-          goal_name: g.goal_name.trim(),
-          is_complete: !!g.is_complete,
-        })),
-      },
+      nextLevel: { goals: editGoals.map((g) => ({ goal_name: g.goal_name.trim(), is_complete: !!g.is_complete })) },
       updatedAt: serverTimestamp(),
     });
     setEditing(null);
   };
 
-  const toggleGoalComplete = (idx: number) => {
-    setEditGoals((gs) =>
-      gs.map((g, i) => (i === idx ? { ...g, is_complete: !g.is_complete } : g))
-    );
-  };
+  const toggleGoalComplete = (i: number) =>
+    setEditGoals((gs) => gs.map((g, idx) => (idx === i ? { ...g, is_complete: !g.is_complete } : g)));
 
   const addGoal = () => {
     const g = newGoal.trim();
@@ -122,16 +88,12 @@ export default function AttributesPage() {
     setNewGoal("");
   };
 
-  const removeGoal = (idx: number) => {
-    setEditGoals((gs) => gs.filter((_, i) => i !== idx));
-  };
+  const removeGoal = (i: number) => setEditGoals((gs) => gs.filter((_, idx) => idx !== i));
 
   const doLevelUp = async (row: AttributeRow) => {
     if (!user) return;
     const ok = await levelUpAttribute(user.uid, row.id);
-    if (!ok) {
-      alert("Level up requirements not met yet.");
-    }
+    if (!ok) alert("Requirements not met yet.");
   };
 
   if (!user) {
@@ -152,7 +114,7 @@ export default function AttributesPage() {
       <section className="border rounded-2xl p-4">
         <h2 className="font-semibold mb-3">Add attribute (max 5)</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <label className="text-sm">
+          <label className="text-sm md:col-span-2">
             Name *
             <input
               className="mt-1 border rounded px-3 py-2 w-full"
@@ -162,23 +124,8 @@ export default function AttributesPage() {
               disabled={atLimit}
             />
           </label>
-          <label className="text-sm">
-            XP required to reach next level
-            <input
-              className="mt-1 border rounded px-3 py-2 w-full"
-              type="number"
-              min={0}
-              value={xpRequired}
-              onChange={(e) => setXpRequired(parseInt(e.target.value || "0"))}
-              disabled={atLimit}
-            />
-          </label>
           <div className="flex items-end">
-            <button
-              className="border rounded px-4 py-2 hover:bg-gray-50 disabled:opacity-50"
-              onClick={addAttribute}
-              disabled={atLimit}
-            >
+            <button className="border rounded px-4 py-2 hover:bg-gray-50 disabled:opacity-50" onClick={addAttribute} disabled={atLimit}>
               Add
             </button>
           </div>
@@ -194,14 +141,15 @@ export default function AttributesPage() {
           <div className="text-sm opacity-70">No attributes yet.</div>
         ) : (
           rows.map((r) => {
+            const req = requiredXpForAttributeLevel(r.level ?? 1);
             const eligible = canLevelUp(r as any);
+
             return (
               <div key={r.id} className="border rounded-2xl p-4 flex items-center justify-between gap-4">
                 <div>
                   <div className="font-semibold">{r.name}</div>
                   <div className="text-xs opacity-70">
-                    Level: {r.level ?? 1} | XP: {r.xp ?? 0} | Next level requires:{" "}
-                    {r.nextLevel?.xp_required ?? 100} xp
+                    Level: {r.level ?? 1} | XP: {r.xp ?? 0} | Next level requires: {req} xp
                   </div>
                   {r.nextLevel?.goals?.length ? (
                     <ul className="text-xs mt-1 list-disc pl-5">
@@ -216,23 +164,18 @@ export default function AttributesPage() {
                   )}
                 </div>
                 <div className="flex items-center gap-2">
-                  <button
-                    className="border rounded px-3 py-2 hover:bg-gray-50"
-                    onClick={() => openEdit(r)}
-                  >
+                  <button className="border rounded px-3 py-2 hover:bg-gray-50" onClick={() => openEdit(r)}>
                     Edit
                   </button>
                   <button
-                    className="border rounded px-3 py-2 hover:bg-gray-50"
+                    className="border rounded px-3 py-2 hover:bg-gray-50 disabled:opacity-50"
                     onClick={() => doLevelUp(r)}
-                    title="Level up when XP and goals are met"
+                    disabled={!eligible}
+                    title={eligible ? "Level up now" : "Meet goals and XP first"}
                   >
                     Level up
                   </button>
-                  <button
-                    className="border rounded px-3 py-2 hover:bg-gray-50"
-                    onClick={() => removeAttribute(r.id)}
-                  >
+                  <button className="border rounded px-3 py-2 hover:bg-gray-50" onClick={() => removeAttribute(r.id)}>
                     Delete
                   </button>
                 </div>
@@ -250,26 +193,11 @@ export default function AttributesPage() {
 
             <label className="text-sm block">
               Name
-              <input
-                className="mt-1 border rounded px-3 py-2 w-full"
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-              />
-            </label>
-
-            <label className="text-sm block">
-              XP required to reach next level
-              <input
-                className="mt-1 border rounded px-3 py-2 w-full"
-                type="number"
-                min={0}
-                value={editXpReq}
-                onChange={(e) => setEditXpReq(parseInt(e.target.value || "0"))}
-              />
+              <input className="mt-1 border rounded px-3 py-2 w-full" value={editName} onChange={(e) => setEditName(e.target.value)} />
             </label>
 
             <div className="border rounded p-3">
-              <div className="text-sm font-medium mb-2">Goals</div>
+              <div className="text-sm font-medium mb-2">Goals (for next level)</div>
 
               <div className="flex gap-2">
                 <input
@@ -287,11 +215,7 @@ export default function AttributesPage() {
                 {editGoals.map((g, i) => (
                   <li key={i} className="flex items-center justify-between">
                     <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={g.is_complete}
-                        onChange={() => toggleGoalComplete(i)}
-                      />
+                      <input type="checkbox" checked={g.is_complete} onChange={() => toggleGoalComplete(i)} />
                       <span className={g.is_complete ? "line-through" : ""}>{g.goal_name}</span>
                     </label>
                     <button className="text-xs underline" onClick={() => removeGoal(i)}>
