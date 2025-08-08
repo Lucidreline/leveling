@@ -17,6 +17,7 @@ import {
 } from "firebase/firestore";
 import { getBrowserTimezone, getNextOccurrence, isoDate } from "@/lib/recurrence";
 import { computeReward } from "@/lib/rewards";
+import { awardXp } from "@/lib/xp";
 import Link from "next/link";
 
 type Recurrence = {
@@ -119,11 +120,9 @@ export default function TasksPage() {
     if (alreadyDoneToday) return;
 
     const after = t.nextDueAt?.toDate() ?? new Date();
-    const next = getNextOccurrence(
-      t.frequency.rrule,
-      new Date(after.getTime() + 60_000),
-      t.frequency.anchor
-    ) || new Date(after);
+    const next =
+      getNextOccurrence(t.frequency.rrule, new Date(after.getTime() + 60_000), t.frequency.anchor) ||
+      new Date(after);
     const dueIso = isoDate(after);
     const increment = todayIso === dueIso;
     const newStreak = increment ? (t.streak || 0) + 1 : 1;
@@ -135,6 +134,9 @@ export default function TasksPage() {
       streak: newStreak,
       updatedAt: serverTimestamp(),
     });
+
+    // Award XP for this completion
+    await awardXp(user.uid, t.final_reward);
   };
 
   const removeTask = async (t: CommonTask) => {

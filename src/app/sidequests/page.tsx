@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { auth, db } from "@/lib/firebase";
-import { User, onAuthStateChanged, signInWithPopup, GoogleAuthProvider } from "firebase/auth";
+import { User, onAuthStateChanged } from "firebase/auth";
 import {
   addDoc,
   collection,
@@ -16,6 +16,8 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { computeReward } from "@/lib/rewards";
+import { awardXp } from "@/lib/xp";
+import Link from "next/link";
 
 type SideQuest = {
   id: string;
@@ -105,11 +107,16 @@ export default function SideQuestsPage() {
     if (!user) return;
     const ref = doc(db, "users", user.uid, "sideQuests", sq.id);
     const now = serverTimestamp();
+    const toComplete = !sq.is_complete;
+
     await updateDoc(ref, {
-      is_complete: !sq.is_complete,
-      closedAt: sq.is_complete ? null : now,
+      is_complete: toComplete,
+      closedAt: toComplete ? now : null,
       updatedAt: now,
     });
+
+    // Award or remove XP depending on toggle direction
+    await awardXp(user.uid, toComplete ? sq.final_reward : -sq.final_reward);
   };
 
   const remove = async (sq: SideQuest) => {
@@ -119,13 +126,11 @@ export default function SideQuestsPage() {
 
   if (!user) {
     return (
-     // same file as you have now, except change the unauthenticated JSX:
       <main className="p-8 max-w-2xl mx-auto">
         <h1 className="text-2xl font-bold">Side Quests</h1>
         <p className="mt-4 text-sm">You need to sign in to manage side quests.</p>
-        <a href="/signin" className="mt-4 inline-block underline">Go to sign in</a>
+        <Link href="/signin" className="mt-4 inline-block underline">Go to sign in</Link>
       </main>
-
     );
   }
 
@@ -133,7 +138,6 @@ export default function SideQuestsPage() {
     <main className="p-8 max-w-3xl mx-auto space-y-6">
       <h1 className="text-2xl font-bold">Side Quests</h1>
 
-      {/* Add side quest */}
       <section className="border p-4 rounded-xl space-y-3">
         <h2 className="font-semibold">Add a side quest</h2>
 
@@ -181,7 +185,6 @@ export default function SideQuestsPage() {
         </button>
       </section>
 
-      {/* List */}
       <section className="space-y-3">
         {loading ? (
           <div className="text-sm opacity-70">Loading…</div>
