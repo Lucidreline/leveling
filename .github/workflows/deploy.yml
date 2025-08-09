@@ -2,7 +2,8 @@ name: CI / CD
 
 on:
   push:
-    branches: [ master ]
+    branches:
+      - master
 
 jobs:
   build-and-push:
@@ -24,7 +25,11 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build & push multi-arch image
+        id: build
         uses: docker/build-push-action@v4
+        env:
+          # helpful to get readable logs if build fails
+          BUILDKIT_PROGRESS: plain
         with:
           context: .
           file: Dockerfile
@@ -32,6 +37,14 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: |
             lucidreline/leveling:latest
+          build-args: |
+            NEXT_PUBLIC_FIREBASE_API_KEY=${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
+            NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
+            NEXT_PUBLIC_FIREBASE_PROJECT_ID=${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
+            NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=${{ secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
+            NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
+            NEXT_PUBLIC_FIREBASE_APP_ID=${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
+            NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=${{ secrets.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID }}
 
   deploy:
     name: 🚀 Deploy to k3s via SSH
@@ -40,38 +53,22 @@ jobs:
     steps:
       - name: SSH & Deploy
         uses: appleboy/ssh-action@v0.1.10
-        env:
-          # Create this secret in GitHub; value = base64 -w0 .env.local
-          LEVELING_ENV_LOCAL_B64: ${{ secrets.LEVELING_ENV_LOCAL_B64 }}
         with:
-          host: ${{ secrets.SSH_HOST }}
+          host: ${{ secrets.SSH_HOST }}     # your cluster public IP (works better than hostname)
           port: 2222
           username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_DEPLOY_KEY }}
-          envs: LEVELING_ENV_LOCAL_B64
+          key: ${{ secrets.SSH_DEPLOY_KEY }}  # full private key contents
           script: |
             set -e
             echo "::group::🚀 Deploying to k3s"
             export KUBECONFIG=~/kubeconfig
 
-            # Recreate env file
-            ENV_TMP="$HOME/leveling.env"
-            echo "$LEVELING_ENV_LOCAL_B64" | base64 -d > "$ENV_TMP"
-
-            # Create/Update k8s Secret from env file (parses KEY=VAL lines)
-            kubectl create secret generic leveling-env \
-              --from-env-file="$ENV_TMP" \
-              --dry-run=client -o yaml | kubectl apply -f -
-
-            # Apply k8s manifests (they should exist on the server already)
+            # Make sure manifests exist at these paths on the server
             kubectl apply -f ~/dev/leveling/leveling-deployment.yaml
             kubectl apply -f ~/dev/leveling/leveling-service.yaml
             kubectl apply -f ~/dev/leveling/leveling-ingress.yaml
 
-            # Update image + wait for rollout
+            # Point deployment to the new image and wait for rollout
             kubectl set image deployment/leveling leveling=lucidreline/leveling:latest
             kubectl rollout status deployment/leveling --timeout=15m
-
-            # Cleanup
-            rm -f "$ENV_TMP"
             echo "::endgroup::"
