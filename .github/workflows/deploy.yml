@@ -64,9 +64,9 @@ jobs:
             export KUBECONFIG=~/kubeconfig
 
             # Make sure manifests exist at these paths on the server
-            kubectl apply -f ~/dev/leveling/leveling-deployment.yaml
-            kubectl apply -f ~/dev/leveling/leveling-service.yaml
-            kubectl apply -f ~/dev/leveling/leveling-ingress.yaml
+            kubectl apply -f ~/dev/leveling/k8s/leveling-deployment.yaml
+            kubectl apply -f ~/dev/leveling/k8s/leveling-service.yaml
+            kubectl apply -f ~/dev/leveling/k8s/leveling-ingress.yaml
 
             # Point deployment to the new image and wait for rollout
             kubectl set image deployment/leveling leveling=lucidreline/leveling:latest
