@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: leveling
+  labels:
+    app: leveling
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: leveling
+  template:
+    metadata:
+      labels:
+        app: leveling
+    spec:
+      containers:
+        - name: leveling
+          image: lucidreline/leveling:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - secretRef:
+                name: leveling-env
+          # Optional probes
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+      # Remove this unless you truly need it
+      # imagePullSecrets:
+      #   - name: ghcr-creds
